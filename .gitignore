@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+venv/
+
+# Project
+.env
+data/
+*.mp3
+*.m4a
+*.mp4
+*.webm
+*.mkv
+*.srt
+*.vtt
+*.txt
+
+# OS
+.DS_Store
+Thumbs.db
