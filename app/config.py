@@ -17,10 +17,14 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str = Field(..., env="OPENAI_API_KEY")
-    openai_model: str = Field("gpt-5", env="OPENAI_MODEL")
+    openai_model: str = Field("gpt-5.1", env="OPENAI_MODEL")
     # Accept Responses API token limit env to avoid validation errors
     openai_max_output_tokens: Optional[int] = Field(None, env="OPENAI_MAX_OUTPUT_TOKENS")
     openai_max_tokens: int = Field(8000, env="OPENAI_MAX_TOKENS")
+
+    # GPT-5.1 reasoning parameters
+    openai_reasoning_effort: str = Field("medium", env="OPENAI_REASONING_EFFORT")  # none/low/medium/high
+    openai_verbosity: str = Field("medium", env="OPENAI_VERBOSITY")  # low/medium/high
 
     # Speech-to-Text (OpenAI Whisper API only)
     stt_language: str = Field("auto", env="STT_LANGUAGE")  # auto/en/ru/...
