@@ -151,6 +151,54 @@ class OpenAIClient:
 
         return prompt
 
+    async def answer_from_memory(self, question: str, context: str) -> str:
+        """
+        Answer a question based on stored memory context.
+
+        Args:
+            question: User's question
+            context: Retrieved memory context
+
+        Returns:
+            Generated answer
+        """
+        system_prompt = (
+            "Ты умный ассистент с памятью. У тебя есть доступ к ранее проанализированному контенту.\n"
+            "Отвечай на вопросы пользователя на основе предоставленного контекста.\n"
+            "Отвечай исключительно на русском языке.\n"
+            "Будь точным и полезным. Если информации недостаточно — честно скажи об этом.\n"
+            "Ссылайся на конкретные записи из контекста когда это уместно."
+        )
+
+        user_prompt = f"""Вопрос пользователя: {question}
+
+Контекст из памяти (ранее проанализированный контент):
+
+{context}
+
+Ответь на вопрос пользователя, используя информацию из контекста."""
+
+        try:
+            max_output_tokens = int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "2000"))
+        except ValueError:
+            max_output_tokens = 2000
+
+        try:
+            resp = await self.client.responses.create(
+                model=self.primary_model,
+                instructions=system_prompt,
+                input=user_prompt,
+                max_output_tokens=max_output_tokens,
+            )
+
+            content = (resp.output_text or "").strip()
+            logger.info(f"Memory answer generated. Length: {len(content)} chars")
+            return content
+
+        except Exception as e:
+            logger.error(f"Error generating memory answer: {e}")
+            return ""
+
     async def close(self):
         try:
             await self.client.close()

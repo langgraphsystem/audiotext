@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # Message limits
     max_message_length: int = Field(4000, env="MAX_MESSAGE_LENGTH")
 
+    # Memory settings
+    memory_enabled: bool = Field(True, env="MEMORY_ENABLED")
+    memory_max_entries: int = Field(100, env="MEMORY_MAX_ENTRIES")  # Max entries per user
+    memory_embedding_model: str = Field("text-embedding-3-small", env="MEMORY_EMBEDDING_MODEL")
+    memory_search_top_k: int = Field(3, env="MEMORY_SEARCH_TOP_K")  # Results for search
+
     # Webhook (optional; use polling by default)
     webhook_base_url: Optional[str] = Field(None, env="WEBHOOK_BASE_URL")
     webhook_path: str = Field("/webhook", env="WEBHOOK_PATH")

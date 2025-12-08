@@ -17,6 +17,7 @@ from .stt_engine import STTEngine
 from .openai_client import OpenAIClient
 from .video_processor import VideoProcessor
 from .rate_limiter import rate_limiter
+from .memory import get_memory_store
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -65,6 +66,9 @@ async def cmd_help(message: Message):
 **Команды:**
 • `/start` - Показать приветственное сообщение
 • `/help` - Показать эту справку
+• `/memory` - Показать статистику памяти
+• `/ask [вопрос]` - Спросить о ранее проанализированном контенте
+• `/clear_memory` - Очистить всю память
 
 **Поддерживаемые URL:**
 • `https://www.tiktok.com/@username/video/...`
@@ -88,6 +92,146 @@ async def cmd_help(message: Message):
 При проблемах проверьте логи бота или попробуйте с другим видео."""
     
     await message.answer(help_text, parse_mode="Markdown")
+
+
+@router.message(F.text == "/memory")
+async def cmd_memory(message: Message):
+    """Show memory statistics for user."""
+    if not settings.memory_enabled:
+        await message.answer("🧠 Память отключена в настройках бота.")
+        return
+
+    user_id = message.from_user.id
+    memory_store = get_memory_store()
+    stats = memory_store.get_memory_stats(user_id)
+
+    if stats["total_entries"] == 0:
+        await message.answer(
+            "🧠 **Память пуста**\n\n"
+            "Отправьте TikTok ссылки для анализа — бот запомнит весь контент.\n"
+            "Потом используйте `/ask [вопрос]` чтобы спросить о нём.",
+            parse_mode="Markdown"
+        )
+        return
+
+    memories = memory_store.get_all_memories(user_id)
+    memory_list = "\n".join([
+        f"• #{m['id']} ({m['timestamp'][:10]}): {m['summary'][:50]}..."
+        for m in memories[-5:]  # Show last 5
+    ])
+
+    await message.answer(
+        f"🧠 **Статистика памяти**\n\n"
+        f"📊 Всего записей: **{stats['total_entries']}**\n"
+        f"📅 Создана: {stats.get('created', 'N/A')[:10]}\n"
+        f"🔄 Обновлена: {stats.get('updated', 'N/A')[:10]}\n\n"
+        f"**Последние записи:**\n{memory_list}\n\n"
+        f"💡 Используйте `/ask [вопрос]` чтобы спросить о контенте.",
+        parse_mode="Markdown"
+    )
+
+
+@router.message(F.text == "/clear_memory")
+async def cmd_clear_memory(message: Message):
+    """Clear all user memory."""
+    if not settings.memory_enabled:
+        await message.answer("🧠 Память отключена в настройках бота.")
+        return
+
+    user_id = message.from_user.id
+    memory_store = get_memory_store()
+
+    if memory_store.clear_memory(user_id):
+        await message.answer("🗑️ Память успешно очищена!")
+    else:
+        await message.answer("❌ Ошибка при очистке памяти.")
+
+
+@router.message(F.text.startswith("/ask"))
+async def cmd_ask(message: Message):
+    """Answer questions based on stored memory."""
+    if not settings.memory_enabled:
+        await message.answer("🧠 Память отключена в настройках бота.")
+        return
+
+    user_id = message.from_user.id
+
+    # Extract question from message
+    query = message.text[4:].strip()  # Remove "/ask"
+
+    if not query:
+        await message.answer(
+            "❓ **Как использовать /ask**\n\n"
+            "Напишите вопрос после команды:\n"
+            "`/ask О чём было последнее видео?`\n"
+            "`/ask Какие советы давали про маркетинг?`\n"
+            "`/ask Что говорили о продажах?`",
+            parse_mode="Markdown"
+        )
+        return
+
+    await message.answer("🔍 Ищу в памяти...")
+
+    memory_store = get_memory_store()
+
+    # Search in memory
+    results = await memory_store.search_memory(
+        user_id,
+        query,
+        top_k=settings.memory_search_top_k
+    )
+
+    if not results:
+        await message.answer(
+            "🤔 Не нашёл релевантной информации в памяти.\n\n"
+            "Возможно:\n"
+            "• Память пуста — сначала проанализируйте TikTok видео\n"
+            "• Попробуйте переформулировать вопрос\n\n"
+            "Используйте `/memory` чтобы посмотреть что сохранено."
+        )
+        return
+
+    # Build context from results
+    context_parts = []
+    for r in results:
+        context_parts.append(
+            f"--- Запись #{r['id']} (релевантность: {r['similarity']}) ---\n"
+            f"Контент: {r['content'][:1000]}\n"
+            f"Анализ: {r['analysis'][:2000]}\n"
+        )
+
+    context = "\n\n".join(context_parts)
+
+    # Use GPT to answer based on context
+    await message.answer("🧠 Формирую ответ на основе памяти...")
+
+    try:
+        openai_client = OpenAIClient()
+        answer = await openai_client.answer_from_memory(query, context)
+        await openai_client.close()
+
+        if answer:
+            # Split long answers
+            if len(answer) > settings.max_message_length:
+                chunks = [answer[i:i+settings.max_message_length]
+                          for i in range(0, len(answer), settings.max_message_length)]
+                for chunk in chunks:
+                    await message.answer(chunk)
+            else:
+                await message.answer(f"💡 **Ответ на основе памяти:**\n\n{answer}", parse_mode="Markdown")
+
+            # Show sources
+            sources = "\n".join([
+                f"• Запись #{r['id']} ({r['timestamp'][:10]})"
+                for r in results
+            ])
+            await message.answer(f"📚 **Источники:**\n{sources}", parse_mode="Markdown")
+        else:
+            await message.answer("❌ Не удалось сформировать ответ. Попробуйте позже.")
+
+    except Exception as e:
+        logger.error(f"Error answering from memory: {e}")
+        await message.answer("❌ Ошибка при формировании ответа.")
 
 
 @router.message(F.text.regexp(r"(https?://)?(www\.)?(vt\.)?tiktok\.com"))
@@ -235,10 +379,27 @@ async def handle_tiktok_url(message: Message, state: FSMContext):
                 chunks = processor.send_analysis_chunks(analysis)
                 for chunk in chunks:
                     await message.answer(chunk)
+
+            # Step 6: Save to memory
+            if settings.memory_enabled and analysis and text_content:
+                try:
+                    mem_store = get_memory_store()
+                    saved = await mem_store.add_memory(
+                        user_id=user_id,
+                        content=text_content,
+                        analysis=analysis,
+                        source_url=url,
+                        content_type="tiktok"
+                    )
+                    if saved:
+                        await message.answer("🧠 Контент сохранён в память. Используйте /ask чтобы задать вопрос.")
+                except Exception as e:
+                    logger.warning(f"Failed to save to memory: {e}")
+
         except Exception as e:
             logger.error(f"Error during GPT-5 analysis: {e}")
             await message.answer("❌ Ошибка при работе с GPT-5. Попробуйте позже.")
-        
+
         # Cleanup
         cleanup_temp_files(*temp_files)
         if openai_client:
