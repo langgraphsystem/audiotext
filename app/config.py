@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     memory_embedding_model: str = Field("text-embedding-3-small", env="MEMORY_EMBEDDING_MODEL")
     memory_search_top_k: int = Field(3, env="MEMORY_SEARCH_TOP_K")  # Results for search
 
+    # Supabase settings
+    supabase_url: str = Field(..., env="SUPABASE_URL")
+    supabase_key: str = Field(..., env="SUPABASE_KEY")
+    supabase_table: str = Field("bot_memory", env="SUPABASE_TABLE")
+
     # Webhook (optional; use polling by default)
     webhook_base_url: Optional[str] = Field(None, env="WEBHOOK_BASE_URL")
     webhook_path: str = Field("/webhook", env="WEBHOOK_PATH")
