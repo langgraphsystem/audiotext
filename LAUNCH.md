@@ -1,203 +1,173 @@
-# 🚀 Launch Instructions
+# 🚀 Инструкция по запуску — ChatGPT Luna
 
-## 📋 Prerequisites Checklist
+## 📋 Чеклист перед стартом
 
-Before starting, ensure you have:
+- [ ] **Python 3.11+**
+- [ ] **FFmpeg** установлен и доступен в `PATH`
+- [ ] **Токен Telegram-бота** (от @BotFather)
+- [ ] **Ключ OpenAI API**
+- [ ] **Git** (для клонирования репозитория)
 
-- [ ] **Python 3.11+** installed
-- [ ] **FFmpeg** installed and in PATH
-- [ ] **Telegram Bot Token** (from @BotFather)
-- [ ] **OpenAI API Key** (from OpenAI Platform)
-- [ ] **Git** (for cloning repository)
+## 🔧 Пошаговая настройка
 
-## 🔧 Step-by-Step Setup
-
-### Step 1: Install Python Dependencies
+### Шаг 1. Зависимости Python
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 2: Configure Environment
+### Шаг 2. Конфигурация
 ```bash
-# Copy example configuration
 cp env.example .env
-
-# Edit .env file with your credentials
-# Use any text editor: nano, vim, notepad, etc.
 ```
 
-**Required .env configuration:**
+Минимально необходимые поля:
 ```env
 BOT_TOKEN=123456:your-telegram-bot-token-here
 OPENAI_API_KEY=sk-your-openai-api-key-here
 ```
 
-### Step 3: Test Setup
+Дополнительно можно задать имя ассистента (`BRAND_NAME`), модель (`OPENAI_MODEL`),
+лимиты и cookies для Instagram — см. `env.example`.
+
+### Шаг 3. Проверка окружения
 ```bash
 python test_setup.py
 ```
 
-**Expected output:**
+Ожидаемый вывод:
 ```
-🔍 Testing TikTok Bot Setup...
+🔍 Проверка окружения ChatGPT Luna...
 
 ✅ Python 3.11.x
-📦 Testing Python Dependencies:
+
+📦 Python-зависимости:
 ✅ aiogram
 ✅ yt-dlp
-✅ faster-whisper
 ✅ openai
 ✅ pydantic
+✅ pydantic-settings
 ✅ httpx
-🛠️ Testing System Dependencies:
-✅ FFmpeg
-✅ FFprobe
-📁 Testing Project Structure:
-✅ .env
+✅ aiohttp
+
+🛠️ Системные зависимости:
+✅ FFmpeg (обязателен для длинных видео)
+✅ FFprobe (обязателен для длинных видео)
+
+📁 Структура проекта:
 ✅ requirements.txt
 ✅ app/config.py
 ✅ app/bot.py
-✅ data/
+✅ app/audio.py
+✅ app/handlers.py
+✅ .env
+
+🔗 Распознавание ссылок:
+✅ https://www.tiktok.com/@user/video/1234567890 → tiktok
+✅ https://www.instagram.com/reel/Cxyz12345/ → instagram
+...
 
 ==================================================
-🎉 All tests passed! Your setup is ready.
+🎉 Все проверки пройдены. ChatGPT Luna готов к запуску.
 ```
 
-### Step 4: Run the Bot
+### Шаг 4. Запуск
 ```bash
 python -m app.bot
 ```
 
-**Expected output:**
+Ожидаемый вывод:
 ```
-2024-01-XX XX:XX:XX | tiktok_bot | INFO | Starting TikTok Content Analyzer Bot...
-2024-01-XX XX:XX:XX | tiktok_bot | INFO | Bot initialized with token: 1234567890...
-2024-01-XX XX:XX:XX | tiktok_bot | INFO | OpenAI model: gpt-5 (fallback: gpt-4o)
-2024-01-XX XX:XX:XX | tiktok_bot | INFO | STT engine: faster-whisper
-2024-01-XX XX:XX:XX | tiktok_bot | INFO | STT model size: small
-2024-01-XX XX:XX:XX | tiktok_bot | INFO | Work directory: ./data
-2024-01-XX XX:XX:XX | tiktok_bot | INFO | Starting bot in polling mode...
-```
-
-## 📱 Using the Bot
-
-### 1. Start the Bot
-- Send `/start` to your bot on Telegram
-- You'll receive a welcome message with instructions
-
-### 2. Send TikTok URL
-- Copy any TikTok video URL
-- Paste it in the chat with your bot
-- Example: `https://www.tiktok.com/@username/video/1234567890`
-
-### 3. Wait for Processing
-The bot will show progress messages:
-```
-🔄 Processing TikTok video...
-📝 Checking for subtitles...
-✅ Found subtitles! Converting to text...
-📄 Sending text file...
-🤖 Analyzing content with AI...
-📊 Analysis complete!
+| INFO | 🌙 ChatGPT Luna · анализатор видеоконтента запущен
+| INFO | 🧠 Модель ИИ: Luna (backend: gpt-5.6-luna)
+| INFO | 🎤 Распознавание речи: OpenAI Audio API (gpt-transcribe)
+| INFO | 🌐 Платформы: TikTok, Instagram
+| INFO | 🎬 FFmpeg найден: длинные видео будут разбиваться на части
+| INFO | Starting bot in polling mode...
 ```
 
-### 4. Receive Results
-You'll get:
-- 📄 **Text file** with extracted content
-- 📊 **AI analysis** with summary, topics, and highlights
+## 📱 Работа с ботом
 
-## 🔧 Troubleshooting
+1. Отправьте `/start` — придёт приветствие и список возможностей.
+2. Вставьте ссылку на TikTok или Instagram видео.
+3. Бот покажет прогресс одним обновляющимся сообщением:
+   ```
+   🔄 Обрабатываю видео из Instagram...
+   📝 Проверяю субтитры...
+   🎵 Субтитров нет. Скачиваю аудиодорожку...
+   🎤 Расшифровываю аудио: часть 2 из 5...
+   🧠 ChatGPT Luna анализирует контент...
+   🎉 Анализ завершён!
+   ```
+4. В ответ придут: 📄 файл с текстом и 📊 файл с анализом.
 
-### Common Issues & Solutions
+## 🔧 Устранение неполадок
 
-**❌ "FFmpeg not found"**
+**❌ «FFmpeg не найден»**
 ```bash
-# Windows: Download from https://ffmpeg.org/download.html
-# Add C:\FFmpeg\bin to PATH
-
-# macOS:
+# Ubuntu/Debian
+sudo apt install ffmpeg
+# macOS
 brew install ffmpeg
-
-# Linux:
-sudo apt install ffmpeg  # Ubuntu/Debian
-sudo yum install ffmpeg  # CentOS/RHEL
+# Windows: https://ffmpeg.org/download.html и добавить bin в PATH
 ```
 
-**❌ "OpenAI API error"**
-- Check API key in `.env` file
-- Ensure sufficient credits in OpenAI account
-- Bot will automatically fallback to GPT-4o
+**❌ Instagram: «Не удалось получить данные видео»**
+- Запись приватная или требует входа — экспортируйте cookies в формате Netscape
+  и укажите путь в `INSTAGRAM_COOKIES_FILE`.
+- Проверьте, что ссылка ведёт на конкретный пост/reel, а не на профиль.
 
-**❌ "yt-dlp extraction failed"**
-- Try with a different TikTok video
-- Ensure video is public and accessible
-- Check internet connection
+**❌ Ошибка загрузки в OpenAI Audio API**
+- Лимит одной загрузки — 25 МБ. Уменьшите `MAX_UPLOAD_SIZE_MB` (по умолчанию 24)
+  или `AUDIO_CHUNK_SECONDS`, чтобы куски были меньше.
 
-**❌ "Whisper model not found"**
-- Models download automatically on first use
-- Check internet connection
-- Ensure sufficient disk space
+**❌ Пустая расшифровка**
+- В ролике может не быть разговорной речи (только музыка или шум).
 
-### Using Makefile Commands
+**❌ Ошибка OpenAI API**
+- Проверьте ключ в `.env` и наличие средств на аккаунте.
+- Проверьте, что модель из `OPENAI_MODEL` доступна вашему аккаунту.
+
+### Команды Makefile
 
 ```bash
-make install    # Install dependencies
-make env        # Copy env.example to .env
-make test       # Run setup tests
-make run        # Start the bot
-make clean      # Clean temporary files
+make install    # установка зависимостей
+make env        # копирование env.example в .env
+make test       # проверка окружения
+make run        # запуск бота
+make clean      # удаление временных файлов
 ```
 
-## 🎯 Quick Commands Reference
+## 🏭 Продакшн
 
-### Development
 ```bash
-# Install and setup
-pip install -r requirements.txt
-cp env.example .env
-# Edit .env with your API keys
+# Режим webhook
+WEBHOOK_BASE_URL=https://your-domain.com python -m app.bot --webhook
 
-# Test and run
-python test_setup.py
-python -m app.bot
+# Docker (FFmpeg уже внутри образа)
+docker build -t chatgpt-luna .
+docker run --env-file .env chatgpt-luna
 ```
 
-### Production
-```bash
-# Webhook mode (for production servers)
-python -m app.bot --webhook
-```
+### Railway
 
-### Maintenance
-```bash
-# Clean temporary files
-make clean
+Сборка идёт по `Dockerfile` (см. `railway.toml`) — FFmpeg уже внутри образа.
+В Variables достаточно `BOT_TOKEN` и `OPENAI_API_KEY`; `PORT` и
+`RAILWAY_PUBLIC_DOMAIN` платформа подставляет сама.
 
-# Update dependencies
-pip install -r requirements.txt --upgrade
+- По умолчанию — polling, одна реплика (`numReplicas = 1`): Telegram не
+  допускает двух потребителей `getUpdates`.
+- Webhook включается переменной `USE_WEBHOOK=true`; адрес соберётся из
+  домена сервиса. Дополнительно стоит задать `WEBHOOK_SECRET` и добавить
+  `healthcheckPath = "/healthz"` в `railway.toml`.
+- При редеплое приходит `SIGTERM` — бот корректно завершает работу, а при
+  старте чистит рабочую директорию.
 
-# Check logs
-# Bot logs are displayed in console
-```
+Подробнее — раздел «Деплой на Railway» в `README.md`.
 
-## 📞 Getting Help
+## 🎉 Признаки корректной работы
 
-1. **Check logs** - Bot shows detailed logs in console
-2. **Run tests** - `python test_setup.py` for diagnostics
-3. **Read docs** - Check README.md for detailed information
-4. **Common issues** - See troubleshooting section above
-
-## 🎉 Success Indicators
-
-Your bot is working correctly when:
-- ✅ Bot starts without errors
-- ✅ `/start` command responds
-- ✅ TikTok URLs are processed
-- ✅ Text files are sent
-- ✅ AI analysis is provided
-- ✅ No error messages in logs
-
----
-
-**Happy botting! 🤖✨**
-
+- ✅ Бот стартует без ошибок и пишет `FFmpeg найден`
+- ✅ `/start` отвечает приветствием ChatGPT Luna
+- ✅ Ссылки TikTok и Instagram обрабатываются
+- ✅ Длинное видео режется на части (видно в прогрессе и логах)
+- ✅ Приходят файл с текстом и файл с анализом

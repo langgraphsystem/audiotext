@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def processing_context():
-    """Context manager for TikTok video processing with proper cleanup."""
+    """Context manager for video processing with proper cleanup."""
     yt_client = None
     stt_engine = None
     openai_client = None
