@@ -83,7 +83,7 @@ OPENAI_API_KEY=...
 ```
 BRAND_NAME=ChatGPT Luna
 MODEL_DISPLAY_NAME=Luna
-OPENAI_MODEL=gpt-5.1
+OPENAI_MODEL=gpt-5.6-luna
 STT_LANGUAGE=auto
 MAX_AUDIO_DURATION_MINUTES=120
 INSTAGRAM_COOKIES_FILE=/app/cookies/instagram.txt   # если нужен закрытый контент
@@ -130,11 +130,12 @@ INSTAGRAM_COOKIES_FILE=/app/cookies/instagram.txt   # если нужен зак
 |------------|--------------|------------|
 | `BRAND_NAME` | `ChatGPT Luna` | Имя ассистента во всех сообщениях и отчётах |
 | `MODEL_DISPLAY_NAME` | `Luna` | Имя модели ИИ, которое видит пользователь |
-| `OPENAI_MODEL` | `gpt-5.1` | Идентификатор модели анализа в API (Responses API) |
+| `OPENAI_MODEL` | `gpt-5.6-luna` | Идентификатор модели анализа в API (Responses API) |
 | `OPENAI_BASE_URL` | — | Свой OpenAI-совместимый эндпоинт вместо `api.openai.com` |
 | `OPENAI_FALLBACK_MODELS` | — | Список моделей через запятую на случай, если основная недоступна |
 | `STT_API_KEY` / `STT_BASE_URL` | — | Отдельный провайдер для расшифровки речи |
-| `OPENAI_REASONING_EFFORT` | `medium` | `none/low/medium/high` — глубина рассуждений |
+| `OPENAI_REASONING_EFFORT` | `medium` | `none/low/medium/high/xhigh/max` — глубина рассуждений |
+| `OPENAI_REASONING_MODE` | — | `standard`/`pro`; `pro` — режим GPT-5.6 Luna Pro |
 | `OPENAI_VERBOSITY` | `medium` | `low/medium/high` — длина ответа |
 | `STT_MODEL` | `whisper-1` | Модель расшифровки; `whisper-1` даёт таймкоды |
 | `STT_LANGUAGE` | `auto` | Язык расшифровки или автоопределение |

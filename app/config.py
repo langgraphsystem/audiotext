@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     # AI backend (OpenAI or any OpenAI-compatible API)
     openai_api_key: str
-    openai_model: str = "gpt-5.1"
+    openai_model: str = "gpt-5.6-luna"
     # Custom endpoint, e.g. https://api.your-provider.com/v1
     openai_base_url: Optional[str] = None
     # Comma-separated models tried, in order, if the configured one is
@@ -34,8 +34,11 @@ class Settings(BaseSettings):
     openai_max_output_tokens: Optional[int] = None
     openai_max_tokens: int = 8000
 
-    # Reasoning parameters
-    openai_reasoning_effort: str = "medium"  # none/low/medium/high
+    # Reasoning parameters (GPT-5.6 family)
+    # none/low/medium/high/xhigh/max
+    openai_reasoning_effort: str = "medium"
+    # standard/pro — "pro" is what GPT-5.6 Luna Pro is served with
+    openai_reasoning_mode: Optional[str] = None
     openai_verbosity: str = "medium"  # low/medium/high
 
     # Speech-to-Text (OpenAI Audio API)

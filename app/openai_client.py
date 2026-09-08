@@ -71,9 +71,17 @@ class OpenAIClient:
             "max_output_tokens": max_output_tokens,
         }
 
+        reasoning: Dict[str, Any] = {}
         effort = (settings.openai_reasoning_effort or "").strip().lower()
         if effort and effort != "none":
-            kwargs["reasoning"] = {"effort": effort}
+            reasoning["effort"] = effort
+
+        mode = (settings.openai_reasoning_mode or "").strip().lower()
+        if mode:
+            reasoning["mode"] = mode
+
+        if reasoning:
+            kwargs["reasoning"] = reasoning
 
         verbosity = (settings.openai_verbosity or "").strip().lower()
         if verbosity:

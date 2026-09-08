@@ -78,7 +78,7 @@ python -m app.bot
 Ожидаемый вывод:
 ```
 | INFO | 🌙 ChatGPT Luna · анализатор видеоконтента запущен
-| INFO | 🧠 Модель анализа: gpt-5.1
+| INFO | 🧠 Модель ИИ: Luna (backend: gpt-5.6-luna)
 | INFO | 🎤 Распознавание речи: OpenAI Audio API (whisper-1)
 | INFO | 🌐 Платформы: TikTok, Instagram
 | INFO | 🎬 FFmpeg найден: длинные видео будут разбиваться на части
