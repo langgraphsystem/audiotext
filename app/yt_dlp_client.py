@@ -190,6 +190,38 @@ class YtDlpClient:
                       if p.suffix.lstrip('.').lower() in MEDIA_EXTENSIONS]
         return sorted(candidates)[0] if candidates else None
 
+    def download_video_preview(self, url: str) -> Optional[Path]:
+        """Download a low-resolution copy of the video for frame extraction.
+
+        Video-only and capped in height, so a short clip costs a few megabytes
+        and no FFmpeg merge is needed.
+        """
+        stem = f"{self._stem(url)}_preview"
+        height = settings.vision_max_height
+
+        opts = {
+            **base_ydl_opts(url),
+            'format': (
+                f"bestvideo[height<={height}]/best[height<={height}]/worst"
+            ),
+            'outtmpl': str(self.workdir / f"{stem}.%(ext)s"),
+        }
+
+        try:
+            logger.info(f"Downloading preview video for frames ({url[-12:]})")
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+        except Exception as e:
+            logger.warning(f"Preview download failed: {e}")
+            return None
+
+        downloaded = self._find_downloaded(stem)
+        if downloaded:
+            logger.info(f"Preview video: {downloaded.name}")
+        else:
+            logger.warning("Preview download produced no file")
+        return downloaded
+
     def download_audio(self, url: str) -> Optional[Path]:
         """Download the audio track of a TikTok or Instagram video.
 

@@ -259,6 +259,36 @@ def base_ydl_opts(url: str) -> dict:
     return opts
 
 
+def collect_metadata(info: Optional[dict]) -> dict:
+    """Pick the fields worth showing to the analysis model.
+
+    Titles, descriptions, hashtags and engagement numbers say a lot about a
+    clip that never appears in the spoken transcript.
+    """
+    if not info:
+        return {}
+
+    fields = {
+        'title': info.get('title'),
+        'description': info.get('description'),
+        'uploader': info.get('uploader') or info.get('channel'),
+        'duration': info.get('duration'),
+        'view_count': info.get('view_count'),
+        'like_count': info.get('like_count'),
+        'comment_count': info.get('comment_count'),
+        'repost_count': info.get('repost_count'),
+        'upload_date': info.get('upload_date'),
+        'track': info.get('track'),
+        'artist': info.get('artist'),
+    }
+
+    tags = info.get('tags') or info.get('hashtags') or []
+    if isinstance(tags, list) and tags:
+        fields['tags'] = [str(t) for t in tags[:20]]
+
+    return {k: v for k, v in fields.items() if v not in (None, '', [], 0)}
+
+
 def get_video_info(url: str) -> Optional[dict]:
     """Get video information using yt-dlp."""
     try:

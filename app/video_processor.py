@@ -11,6 +11,7 @@ from .logger import get_logger
 from .openai_client import OpenAIClient
 from .stt_engine import STTEngine, format_timestamp_range
 from .utils import check_file_size, cleanup_temp_files, platform_title, vtt_or_srt_to_txt
+from .vision import extract_frames, frames_to_data_urls
 from .yt_dlp_client import YtDlpClient
 
 logger = get_logger(__name__)
@@ -82,11 +83,45 @@ class VideoProcessor:
 
         return text_content, segments, temp_files
 
+    async def collect_visual_context(
+        self, url: str, video_info: Optional[Dict[str, Any]] = None
+    ) -> Tuple[List[str], List[Path]]:
+        """Download a low-res copy of the video and extract key frames.
+
+        Returns (data URLs for the model, temp files to clean up). Never
+        raises: the visual pass is a bonus on top of the transcript.
+        """
+        if not settings.vision_enabled or settings.vision_frames <= 0:
+            return [], []
+
+        duration = (video_info or {}).get('duration') or 0
+        limit_seconds = settings.vision_max_duration_minutes * 60
+        if duration and duration > limit_seconds:
+            logger.info(
+                f"Ролик длиннее {settings.vision_max_duration_minutes} мин "
+                "— кадры не извлекаю"
+            )
+            return [], []
+
+        try:
+            preview = await asyncio.to_thread(self.yt_client.download_video_preview, url)
+            if not preview:
+                return [], []
+
+            frames = await asyncio.to_thread(extract_frames, preview)
+            images = frames_to_data_urls(frames)
+            return images, [preview, *frames]
+        except Exception as e:
+            logger.warning(f"Визуальный разбор пропущен: {e}")
+            return [], []
+
     async def analyze_content(
         self,
         text_content: str,
         segments: Optional[List] = None,
         platform: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        images: Optional[List[str]] = None,
     ) -> Tuple[str, Optional[Path]]:
         """Analyze content with the model and save the report to a file.
 
@@ -104,7 +139,11 @@ class VideoProcessor:
             ]
 
         analysis = await self.openai_client.analyze_text(
-            text_content, analysis_segments, platform=platform
+            text_content,
+            analysis_segments,
+            platform=platform,
+            metadata=metadata,
+            images=images,
         )
 
         if not analysis or not analysis.strip():
@@ -117,6 +156,8 @@ class VideoProcessor:
         analysis_filename = f"{brand.replace(' ', '_')}_Analysis_{timestamp}.txt"
         analysis_path = settings.workdir / analysis_filename
 
+        visual_note = f"Кадров разобрано: {len(images)}\n" if images else ""
+
         header = f"""═══════════════════════════════════════════════════════════════
 🌙 ПРОФЕССИОНАЛЬНЫЙ АНАЛИЗ КОНТЕНТА · {source.upper()}
 Powered by {brand} | Content Intelligence Platform
@@ -124,7 +165,7 @@ Powered by {brand} | Content Intelligence Platform
 Дата анализа: {time.strftime('%Y-%m-%d %H:%M:%S')}
 Ассистент: {brand}
 Модель ИИ: {settings.model_display_name}
-═══════════════════════════════════════════════════════════════
+{visual_note}═══════════════════════════════════════════════════════════════
 
 """
 

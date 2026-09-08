@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     # Long audio is split into chunks before transcription (seconds)
     audio_chunk_seconds: int = 600
 
+    # Visual analysis (key frames sent to the model alongside the transcript)
+    vision_enabled: bool = True
+    vision_frames: int = 4
+    vision_frame_width: int = 640
+    # Downloading video for frames is only worth it for reasonably short clips
+    vision_max_duration_minutes: int = 20
+    vision_max_height: int = 480
+
     # System
     workdir: Path = Path("./data")
     log_level: str = "INFO"

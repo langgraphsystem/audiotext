@@ -15,6 +15,7 @@ from .utils import (
     SUPPORTED_URL_REGEX,
     check_audio_duration,
     cleanup_temp_files,
+    collect_metadata,
     detect_platform,
     extract_supported_urls,
     get_video_info,
@@ -175,6 +176,10 @@ async def handle_video_url(message: Message, state: FSMContext):
             )
             return
 
+        metadata = collect_metadata(video_info)
+        if metadata:
+            logger.info(f"Метаданные публикации: {', '.join(metadata.keys())}")
+
         try:
             yt_client = YtDlpClient()
             stt_engine = STTEngine()
@@ -216,11 +221,7 @@ async def handle_video_url(message: Message, state: FSMContext):
                 temp_files.extend(audio_temp_files)
 
                 if not text_content:
-                    await status.set(
-                        "❌ Не удалось получить речь из видео. "
-                        "Возможно, в ролике нет разговорного аудио или запись недоступна."
-                    )
-                    return
+                    logger.info("Речь не распознана — продолжаю с визуальным разбором")
             except ValueError as e:
                 await status.set(f"❌ {e}")
                 return
@@ -234,12 +235,23 @@ async def handle_video_url(message: Message, state: FSMContext):
                 txt_path = file
                 break
 
-        if not text_content or len(text_content.strip()) < 10:
-            await status.set("❌ Не удалось извлечь осмысленный текст из видео.")
+        # Visual pass: key frames go to the model together with the transcript
+        images = []
+        if settings.vision_enabled:
+            await status.set("🖼 Разбираю кадры видео...")
+            images, visual_temp_files = await processor.collect_visual_context(url, video_info)
+            temp_files.extend(visual_temp_files)
+
+        has_text = bool(text_content and len(text_content.strip()) >= 10)
+        if not has_text and not images:
+            await status.set(
+                "❌ Не удалось извлечь ни речь, ни кадры из видео. "
+                "Проверьте, что запись доступна."
+            )
             return
 
         # Step 3: send extracted text
-        if txt_path is not None:
+        if txt_path is not None and has_text:
             try:
                 document = FSInputFile(txt_path, filename=f"{platform or 'video'}_content.txt")
                 await message.answer_document(
@@ -253,7 +265,11 @@ async def handle_video_url(message: Message, state: FSMContext):
 
         try:
             analysis, analysis_path = await processor.analyze_content(
-                text_content, segments, platform=platform
+                text_content or "",
+                segments,
+                platform=platform,
+                metadata=metadata,
+                images=images,
             )
             if analysis_path:
                 temp_files.append(analysis_path)
