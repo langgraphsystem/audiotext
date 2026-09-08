@@ -34,6 +34,17 @@ _UNSUPPORTED_PARAM_MARKERS = (
 # on every chunk of the same file.
 _working_model: Optional[str] = None
 
+# Models known to reject verbose_json: gpt-transcribe only speaks json/text,
+# so asking for segments again on every chunk just burns requests.
+_NO_VERBOSE_JSON = {"gpt-transcribe", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"}
+_verbose_unsupported: set = set()
+
+
+def _supports_segments(model: str) -> bool:
+    """Whether it is worth asking this model for timestamped segments."""
+    base = model.split(":")[0]
+    return base not in _NO_VERBOSE_JSON and base not in _verbose_unsupported
+
 
 def _is_unsupported_param(error: Exception) -> bool:
     """Whether the error is about an option the model does not accept."""
@@ -94,7 +105,7 @@ def _request_variants(
     """
     variants: List[Dict[str, Any]] = []
 
-    if settings.stt_timestamps:
+    if settings.stt_timestamps and _supports_segments(model):
         verbose: Dict[str, Any] = {
             "model": model,
             "response_format": "verbose_json",
@@ -174,6 +185,15 @@ async def transcribe_audio_file(
                     logger.warning(f"Модель распознавания {use_model} недоступна: {e}")
                     break  # try the next model
                 if _is_unsupported_param(e):
+                    if variant.get("response_format") == "verbose_json":
+                        base = use_model.split(":")[0]
+                        if base not in _verbose_unsupported:
+                            _verbose_unsupported.add(base)
+                            logger.warning(
+                                f"{use_model} не поддерживает verbose_json — "
+                                "расшифровка будет без таймкодов сегментов. "
+                                "Если таймкоды нужны, задайте STT_MODEL=whisper-1."
+                            )
                     logger.warning(
                         f"{use_model} не принял параметры "
                         f"({', '.join(k for k in variant if k != 'model')}): {e}"
