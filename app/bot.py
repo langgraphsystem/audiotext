@@ -71,6 +71,9 @@ def log_startup_info() -> None:
         f"🧠 Модель ИИ: {settings.model_display_name} "
         f"(backend: {settings.openai_model})"
     )
+    logger.info(f"🔌 Эндпоинт API: {settings.openai_base_url or 'api.openai.com'}")
+    if settings.fallback_models:
+        logger.info(f"↩️ Резервные модели: {', '.join(settings.fallback_models)}")
     logger.info(f"🎤 Распознавание речи: OpenAI Audio API ({settings.stt_model})")
     logger.info(f"🔤 Язык распознавания: {settings.stt_language}")
     logger.info("🌐 Платформы: TikTok, Instagram")

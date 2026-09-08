@@ -25,8 +25,14 @@ def get_client() -> AsyncOpenAI:
     """Get or create a singleton AsyncOpenAI client."""
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=300.0)
-        logger.info("Initialized OpenAI STT client (AsyncOpenAI)")
+        api_key, base_url = settings.stt_credentials
+        kwargs = {"api_key": api_key, "timeout": 300.0}
+        if base_url:
+            kwargs["base_url"] = base_url
+        _client = AsyncOpenAI(**kwargs)
+        logger.info(
+            f"Initialized STT client | endpoint: {base_url or 'api.openai.com'}"
+        )
     return _client
 
 

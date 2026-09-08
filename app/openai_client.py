@@ -13,20 +13,52 @@ from .utils import platform_title
 
 logger = get_logger(__name__)
 
+# Markers of "this key cannot use this model" in provider error messages
+_MODEL_UNAVAILABLE_MARKERS = (
+    "model_not_found",
+    "does not exist",
+    "do not have access",
+    "not have access",
+    "unknown model",
+    "invalid model",
+    "unsupported model",
+    "model is not supported",
+)
+
+
+def _is_model_unavailable(error: Exception) -> bool:
+    """Whether the error means the model itself is unusable for this key."""
+    text = str(error).lower()
+    return any(marker in text for marker in _MODEL_UNAVAILABLE_MARKERS)
+
 
 class OpenAIClient:
     """Async client that calls the OpenAI Responses API."""
 
     def __init__(self):
         self.api_key = settings.openai_api_key
-        self.model = settings.openai_model
+        self.base_url = settings.openai_base_url
         self.brand = settings.brand_name
         self.model_name = settings.model_display_name
-        self.client = AsyncOpenAI(api_key=self.api_key, timeout=180.0)
+
+        # Configured model first, then the fallbacks, without duplicates
+        self._candidates: List[str] = []
+        for candidate in [settings.openai_model, *settings.fallback_models]:
+            if candidate and candidate not in self._candidates:
+                self._candidates.append(candidate)
+        self.model = self._candidates[0]
+
+        client_kwargs: Dict[str, Any] = {"api_key": self.api_key, "timeout": 180.0}
+        if self.base_url:
+            client_kwargs["base_url"] = self.base_url
+        self.client = AsyncOpenAI(**client_kwargs)
+
         logger.info(
             f"{self.brand} client initialized | модель ИИ: {self.model_name} "
-            f"| backend: {self.model}"
+            f"| backend: {self.model} | endpoint: {self.base_url or 'api.openai.com'}"
         )
+        if len(self._candidates) > 1:
+            logger.info(f"Fallback models: {', '.join(self._candidates[1:])}")
 
     def _request_kwargs(self, instructions: str, user_input: str) -> Dict[str, Any]:
         """Build Responses API kwargs, including reasoning/verbosity controls."""
@@ -49,15 +81,16 @@ class OpenAIClient:
 
         return kwargs
 
-    async def _create_response(self, instructions: str, user_input: str) -> str:
-        """Call the Responses API, retrying without optional controls if needed."""
+    async def _call_model(self, model: str, instructions: str, user_input: str) -> str:
+        """One Responses API call, retrying without optional controls if needed."""
         kwargs = self._request_kwargs(instructions, user_input)
+        kwargs["model"] = model
 
         try:
             resp = await self.client.responses.create(**kwargs)
         except Exception as e:
             # Older models reject reasoning/verbosity: retry with a plain call.
-            if "reasoning" in kwargs or "text" in kwargs:
+            if not _is_model_unavailable(e) and ("reasoning" in kwargs or "text" in kwargs):
                 logger.warning(f"Retrying without reasoning/verbosity controls: {e}")
                 kwargs.pop("reasoning", None)
                 kwargs.pop("text", None)
@@ -66,6 +99,31 @@ class OpenAIClient:
                 raise
 
         return (resp.output_text or "").strip()
+
+    async def _create_response(self, instructions: str, user_input: str) -> str:
+        """Call the model, switching to a fallback if it is unavailable."""
+        start = self._candidates.index(self.model) if self.model in self._candidates else 0
+
+        last_error: Optional[Exception] = None
+        for model in self._candidates[start:]:
+            try:
+                content = await self._call_model(model, instructions, user_input)
+            except Exception as e:
+                if _is_model_unavailable(e):
+                    logger.warning(f"Модель {model} недоступна для этого ключа: {e}")
+                    last_error = e
+                    continue
+                raise
+
+            if model != self.model:
+                logger.warning(f"Переключился на резервную модель: {model}")
+                self.model = model
+            return content
+
+        raise RuntimeError(
+            "Ни одна из моделей не доступна для этого ключа: "
+            f"{', '.join(self._candidates)}"
+        ) from last_error
 
     async def analyze_text(
         self,

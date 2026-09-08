@@ -23,9 +23,14 @@ class Settings(BaseSettings):
     # Telegram Bot
     bot_token: str
 
-    # OpenAI
+    # AI backend (OpenAI or any OpenAI-compatible API)
     openai_api_key: str
     openai_model: str = "gpt-5.1"
+    # Custom endpoint, e.g. https://api.your-provider.com/v1
+    openai_base_url: Optional[str] = None
+    # Comma-separated models tried, in order, if the configured one is
+    # unavailable for the key (empty disables the fallback)
+    openai_fallback_models: str = ""
     openai_max_output_tokens: Optional[int] = None
     openai_max_tokens: int = 8000
 
@@ -36,6 +41,9 @@ class Settings(BaseSettings):
     # Speech-to-Text (OpenAI Audio API)
     stt_language: str = "auto"  # auto/en/ru/...
     stt_model: str = "whisper-1"
+    # Transcription may live on a different provider than the analysis model
+    stt_api_key: Optional[str] = None
+    stt_base_url: Optional[str] = None
 
     # Audio preparation (FFmpeg)
     audio_bitrate: str = "64k"
@@ -116,6 +124,17 @@ class Settings(BaseSettings):
 
         if self.webhook_path and not self.webhook_path.startswith("/"):
             self.webhook_path = f"/{self.webhook_path}"
+
+    @property
+    def fallback_models(self) -> list[str]:
+        """Analysis models to try if the configured one is not available."""
+        return [m.strip() for m in self.openai_fallback_models.split(",") if m.strip()]
+
+    @property
+    def stt_credentials(self) -> tuple[str, Optional[str]]:
+        """API key and base URL used for transcription."""
+        return (self.stt_api_key or self.openai_api_key,
+                self.stt_base_url or self.openai_base_url)
 
     @property
     def webhook_enabled(self) -> bool:
