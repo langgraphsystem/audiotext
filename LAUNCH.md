@@ -148,6 +148,22 @@ docker build -t chatgpt-luna .
 docker run --env-file .env chatgpt-luna
 ```
 
+### Railway
+
+Сборка идёт по `Dockerfile` (см. `railway.toml`) — FFmpeg уже внутри образа.
+В Variables достаточно `BOT_TOKEN` и `OPENAI_API_KEY`; `PORT` и
+`RAILWAY_PUBLIC_DOMAIN` платформа подставляет сама.
+
+- По умолчанию — polling, одна реплика (`numReplicas = 1`): Telegram не
+  допускает двух потребителей `getUpdates`.
+- Webhook включается переменной `USE_WEBHOOK=true`; адрес соберётся из
+  домена сервиса. Дополнительно стоит задать `WEBHOOK_SECRET` и добавить
+  `healthcheckPath = "/healthz"` в `railway.toml`.
+- При редеплое приходит `SIGTERM` — бот корректно завершает работу, а при
+  старте чистит рабочую директорию.
+
+Подробнее — раздел «Деплой на Railway» в `README.md`.
+
 ## 🎉 Признаки корректной работы
 
 - ✅ Бот стартует без ошибок и пишет `FFmpeg найден`

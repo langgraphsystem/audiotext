@@ -1,0 +1,16 @@
+# Railway deployment configuration.
+# The Dockerfile already contains FFmpeg, which the bot needs to process
+# long videos — do not switch the builder to Nixpacks without adding it.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python -m app.bot"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+# Polling allows only one getUpdates consumer: keep a single replica.
+# For several replicas switch to webhook mode (USE_WEBHOOK=true) and add
+# healthcheckPath = "/healthz".
+numReplicas = 1

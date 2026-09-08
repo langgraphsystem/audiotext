@@ -65,6 +65,62 @@ docker run --env-file .env chatgpt-luna
 
 Образ уже содержит FFmpeg.
 
+## ☁️ Деплой на Railway
+
+В репозитории есть `railway.toml`: сборка идёт по `Dockerfile`, поэтому FFmpeg
+попадает в образ. **Не переключайте сборку на Nixpacks** — там FFmpeg нет, и
+длинные видео перестанут обрабатываться.
+
+### Переменные окружения в Railway → Variables
+
+Обязательные:
+```
+BOT_TOKEN=...
+OPENAI_API_KEY=...
+```
+
+Полезные:
+```
+BRAND_NAME=ChatGPT Luna
+OPENAI_MODEL=gpt-5.1
+STT_LANGUAGE=auto
+MAX_AUDIO_DURATION_MINUTES=120
+INSTAGRAM_COOKIES_FILE=/app/cookies/instagram.txt   # если нужен закрытый контент
+```
+
+`PORT` и `RAILWAY_PUBLIC_DOMAIN` Railway подставляет сам — задавать их вручную
+не нужно.
+
+### Polling или webhook
+
+По умолчанию бот работает в режиме **polling**: наличие домена у сервиса режим
+не меняет, поэтому обновление ничего не ломает в текущем деплое.
+
+Чтобы перейти на webhook:
+1. Добавьте переменную `USE_WEBHOOK=true` (адрес соберётся из
+   `RAILWAY_PUBLIC_DOMAIN`, порт — из `PORT`).
+2. Желательно задать `WEBHOOK_SECRET` — бот будет проверять заголовок
+   `X-Telegram-Bot-Api-Secret-Token` и отвечать `401` на чужие запросы.
+3. В `railway.toml` можно добавить `healthcheckPath = "/healthz"`.
+
+Режим можно зафиксировать и флагом команды запуска: `python -m app.bot --webhook`
+или `--polling`.
+
+### Важно про реплики
+
+В режиме polling Telegram допускает только одного потребителя `getUpdates`.
+Две реплики (или локально запущенный бот вместе с продакшеном) дают
+`TelegramConflictError` — бот пишет об этом понятным сообщением в логи.
+Поэтому в `railway.toml` стоит `numReplicas = 1`; для горизонтального
+масштабирования используйте webhook.
+
+### Диск и перезапуски
+
+Файловая система контейнера эфемерная, а при редеплое Railway шлёт `SIGTERM` —
+бот перехватывает сигнал, закрывает сессии и чистит рабочую директорию при
+старте (`CLEAN_WORKDIR_ON_START=true`). Долгое видео на 2 часа занимает на диске
+около 60 МБ во время обработки и удаляется сразу после отправки отчёта.
+
 ## ⚙️ Конфигурация
 
 Все параметры задаются переменными окружения (см. `env.example`).
@@ -83,6 +139,10 @@ docker run --env-file .env chatgpt-luna
 | `MAX_FILE_SIZE_MB` | `500` | Предохранитель на размер скачанного файла |
 | `MAX_AUDIO_DURATION_MINUTES` | `120` | Максимальная длительность ролика |
 | `INSTAGRAM_COOKIES_FILE` / `TIKTOK_COOKIES_FILE` | — | Cookies для закрытого контента |
+| `USE_WEBHOOK` | — | `true` — webhook, `false` — polling; по умолчанию polling |
+| `WEBHOOK_SECRET` | — | Секрет для проверки запросов Telegram в webhook-режиме |
+| `PORT` | `8000` | Порт webhook-сервера (Railway подставляет сам) |
+| `CLEAN_WORKDIR_ON_START` | `true` | Чистить временные файлы прошлого запуска |
 
 ## 🧠 Как это работает
 
