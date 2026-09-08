@@ -14,14 +14,64 @@ from .logger import get_logger
 logger = get_logger(__name__)
 
 
+# Supported platforms and the domains they are recognised by.
+PLATFORM_DOMAINS = {
+    'tiktok': ('tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com'),
+    'instagram': ('instagram.com', 'instagr.am', 'ig.me'),
+}
+
+PLATFORM_TITLES = {
+    'tiktok': 'TikTok',
+    'instagram': 'Instagram',
+}
+
+# Matches both bare and full links of every supported platform.
+SUPPORTED_URL_REGEX = (
+    r"(https?://)?(www\.)?((vt\.|vm\.)?tiktok\.com|instagram\.com|instagr\.am)"
+)
+
+
+def detect_platform(url: str) -> Optional[str]:
+    """Return the platform key for a URL ('tiktok'/'instagram'), or None."""
+    try:
+        candidate = url if '://' in url else f'https://{url}'
+        netloc = urlparse(candidate).netloc.lower()
+        if not netloc:
+            return None
+        for platform, domains in PLATFORM_DOMAINS.items():
+            if any(netloc == d or netloc.endswith(f'.{d}') or netloc == f'www.{d}'
+                   for d in domains):
+                return platform
+    except Exception:
+        return None
+    return None
+
+
+def platform_title(platform: Optional[str]) -> str:
+    """Human readable platform name."""
+    return PLATFORM_TITLES.get(platform or '', 'видео')
+
+
+def is_supported_url(url: str) -> bool:
+    """Check if URL belongs to one of the supported platforms."""
+    return detect_platform(url) is not None
+
+
 def is_tiktok_url(url: str) -> bool:
     """Check if URL is a valid TikTok URL."""
-    try:
-        parsed = urlparse(url)
-        return any(domain in parsed.netloc.lower() 
-                  for domain in ['tiktok.com', 'vt.tiktok.com'])
-    except Exception:
-        return False
+    return detect_platform(url) == 'tiktok'
+
+
+def is_instagram_url(url: str) -> bool:
+    """Check if URL is a valid Instagram URL."""
+    return detect_platform(url) == 'instagram'
+
+
+def extract_supported_urls(text: str) -> list:
+    """Extract every supported URL from a free-form message."""
+    words = re.split(r'\s+', text or '')
+    return [w.strip('.,;:!?()[]<>"\'') for w in words
+            if is_supported_url(w.strip('.,;:!?()[]<>"\''))]
 
 
 def safe_filename(title_or_id: str) -> str:
@@ -151,27 +201,62 @@ def check_audio_duration(info: dict) -> bool:
     return True
 
 
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+
+def base_ydl_opts(url: str) -> dict:
+    """Common yt-dlp options, including per-platform cookies when configured."""
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'http_headers': {'User-Agent': USER_AGENT},
+        'socket_timeout': 30,
+        'retries': 3,
+        'fragment_retries': 3,
+        'extractor_retries': 3,
+        'noplaylist': True,
+    }
+
+    platform = detect_platform(url)
+    cookies = None
+    if platform == 'instagram':
+        cookies = settings.instagram_cookies_file
+        # Instagram serves the page differently to a plain UA
+        opts['http_headers']['Referer'] = 'https://www.instagram.com/'
+    elif platform == 'tiktok':
+        cookies = settings.tiktok_cookies_file
+
+    if cookies:
+        cookies_path = Path(cookies)
+        if cookies_path.exists():
+            opts['cookiefile'] = str(cookies_path)
+            logger.info(f"Using cookies file for {platform}: {cookies_path.name}")
+        else:
+            logger.warning(f"Cookies file not found: {cookies_path}")
+
+    return opts
+
+
 def get_video_info(url: str) -> Optional[dict]:
     """Get video information using yt-dlp."""
     try:
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            # Добавляем настройки для обхода блокировок
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            },
-            'socket_timeout': 30,
-            'retries': 3,
-            'fragment_retries': 3,
-            'extractor_retries': 3,
-        }
-        
+        ydl_opts = {**base_ydl_opts(url), 'extract_flat': False, 'skip_download': True}
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            return info
-            
+
+        # Instagram carousels return a playlist: take the first playable entry
+        if info and info.get('_type') == 'playlist':
+            entries = [e for e in (info.get('entries') or []) if e]
+            if entries:
+                logger.info(f"Playlist detected, using first of {len(entries)} entries")
+                return entries[0]
+
+        return info
+
     except Exception as e:
         logger.error(f"Error extracting video info: {e}")
         return None

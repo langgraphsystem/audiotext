@@ -1,64 +1,58 @@
-# 🚀 Quick Start Guide
+# 🚀 Быстрый старт — ChatGPT Luna
 
-## Prerequisites
+## Требования
 - Python 3.11+
-- FFmpeg installed and in PATH
-- Telegram Bot Token (from @BotFather)
-- OpenAI API Key
+- FFmpeg в `PATH` (обязательно для длинных видео)
+- Токен Telegram-бота (@BotFather)
+- Ключ OpenAI API
 
-## ⚡ Quick Setup (5 minutes)
+## ⚡ Установка за 5 минут
 
-### 1. Install Dependencies
+### 1. Зависимости
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
+FFmpeg:
+- Ubuntu/Debian: `sudo apt install ffmpeg`
+- macOS: `brew install ffmpeg`
+- Windows: https://ffmpeg.org/download.html
+
+### 2. Конфигурация
 ```bash
-# Copy example config
 cp env.example .env
-
-# Edit .env with your API keys and options
-# BOT_TOKEN=your_telegram_bot_token
-# OPENAI_API_KEY=your_openai_api_key
-
-# Speech-to-Text via OpenAI Whisper API
-# STT_LANGUAGE=auto   # or ru/en/... to force language
 ```
 
-### 3. Test Setup
+Минимально нужно заполнить:
+```env
+BOT_TOKEN=123456:ABC...
+OPENAI_API_KEY=sk-...
+```
+
+### 3. Проверка
 ```bash
 python test_setup.py
 ```
 
-### 4. Run Bot
+### 4. Запуск
 ```bash
 python -m app.bot
 ```
 
-## 🎯 Usage
+## 📲 Использование
 
-1. **Start bot**: Send `/start` to your bot
-2. **Send TikTok URL**: Paste any TikTok video link
-3. **Get results**: Bot will return text file + AI analysis
+Отправьте боту ссылку:
+- `https://www.tiktok.com/@username/video/1234567890`
+- `https://vt.tiktok.com/ZSxxxxxxx/`
+- `https://www.instagram.com/reel/Cxxxxxxxxxx/`
 
-## 🔧 Troubleshooting
+Бот пришлёт текст (субтитры или расшифровку) и файл с анализом от ChatGPT Luna.
 
-**"FFmpeg not found"**
-- Windows: Download from https://ffmpeg.org/download.html
-- Add `C:\FFmpeg\bin` to PATH
+## 🔧 Полезные настройки
 
-**"OpenAI API error"**
-- Check API key in `.env`
-- Ensure sufficient credits
-
-**"yt-dlp extraction failed"**
-- Try with a different video
-- Check if video is public
-
-## 📞 Support
-
-- Check `README.md` for detailed documentation
-- Run `python test_setup.py` to diagnose issues
-- Ensure all dependencies are installed correctly
-
+| Нужно | Переменная |
+|-------|------------|
+| Сменить имя ассистента | `BRAND_NAME` |
+| Обрабатывать более длинные ролики | `MAX_AUDIO_DURATION_MINUTES` |
+| Уменьшить куски при нестабильной сети | `AUDIO_CHUNK_SECONDS` |
+| Открыть закрытый Instagram | `INSTAGRAM_COOKIES_FILE` |

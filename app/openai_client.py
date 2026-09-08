@@ -1,108 +1,121 @@
 """
-OpenAI client for content analysis using GPT-5 via the Responses API.
+OpenAI client for content analysis, exposed to users as ChatGPT Luna.
 """
 import asyncio
-import os
 from typing import Optional, List, Dict, Any
 
 from openai import AsyncOpenAI
 
 from .config import settings
 from .logger import get_logger
+from .utils import platform_title
 
 
 logger = get_logger(__name__)
 
 
 class OpenAIClient:
-    """Async client that calls OpenAI Responses API with GPT-5 models."""
+    """Async client that calls the OpenAI Responses API."""
 
     def __init__(self):
         self.api_key = settings.openai_api_key
-        self.primary_model = settings.openai_model or "gpt-5"
-        self.client = AsyncOpenAI(api_key=self.api_key, timeout=90.0)
-        # Early visibility into chosen model
-        logger.info(f"OpenAI client initialized with model: {self.primary_model}")
-        if isinstance(self.primary_model, str) and "gpt-5" in self.primary_model.lower():
-            logger.warning("Configured model contains 'gpt-5'. Ensure this model is available in your account.")
+        self.model = settings.openai_model
+        self.brand = settings.brand_name
+        self.client = AsyncOpenAI(api_key=self.api_key, timeout=180.0)
+        logger.info(f"{self.brand} client initialized with model: {self.model}")
 
-    async def analyze_text(self, text: str, segments: Optional[List[Dict[str, Any]]] = None) -> str:
-        system_prompt = self._build_system_prompt(segments)
-        user_prompt = f"Проанализируй этот контент из TikTok видео:\n\n{text}"
+    def _request_kwargs(self, instructions: str, user_input: str) -> Dict[str, Any]:
+        """Build Responses API kwargs, including reasoning/verbosity controls."""
+        max_output_tokens = settings.openai_max_output_tokens or settings.openai_max_tokens
 
-        logger.info(f"Sending prompt to OpenAI API. Prompt length: {len(user_prompt)} chars.")
-        logger.debug(f"USER PROMPT (first 100 chars): {user_prompt[:100]}...")
+        kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "instructions": instructions,
+            "input": user_input,
+            "max_output_tokens": max_output_tokens,
+        }
+
+        effort = (settings.openai_reasoning_effort or "").strip().lower()
+        if effort and effort != "none":
+            kwargs["reasoning"] = {"effort": effort}
+
+        verbosity = (settings.openai_verbosity or "").strip().lower()
+        if verbosity:
+            kwargs["text"] = {"verbosity": verbosity}
+
+        return kwargs
+
+    async def _create_response(self, instructions: str, user_input: str) -> str:
+        """Call the Responses API, retrying without optional controls if needed."""
+        kwargs = self._request_kwargs(instructions, user_input)
 
         try:
-            max_output_tokens = int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "4000"))
-        except ValueError:
-            max_output_tokens = 4000
+            resp = await self.client.responses.create(**kwargs)
+        except Exception as e:
+            # Older models reject reasoning/verbosity: retry with a plain call.
+            if "reasoning" in kwargs or "text" in kwargs:
+                logger.warning(f"Retrying without reasoning/verbosity controls: {e}")
+                kwargs.pop("reasoning", None)
+                kwargs.pop("text", None)
+                resp = await self.client.responses.create(**kwargs)
+            else:
+                raise
+
+        return (resp.output_text or "").strip()
+
+    async def analyze_text(
+        self,
+        text: str,
+        segments: Optional[List[Dict[str, Any]]] = None,
+        platform: Optional[str] = None,
+    ) -> str:
+        """Analyze a transcript and return a structured report."""
+        source = platform_title(platform)
+        system_prompt = self._build_system_prompt(segments, source)
+        user_prompt = f"Проанализируй этот контент из видео ({source}):\n\n{text}"
+
+        logger.info(f"Sending prompt to {self.brand}. Prompt length: {len(user_prompt)} chars.")
 
         for attempt in range(3):
             try:
-                # Primary attempt
-                resp = await self.client.responses.create(
-                    model=self.primary_model,
-                    instructions=system_prompt,
-                    input=user_prompt,
-                    max_output_tokens=max_output_tokens,
-                )
-                
-                logger.info("Received response from OpenAI API.")
-                logger.debug(f"OpenAI Response object: {resp.model_dump_json(indent=2)}")
-
-                content = (resp.output_text or "").strip()
-                logger.info(f"Model: {self.primary_model} | Output length: {len(content)} chars")
+                content = await self._create_response(system_prompt, user_prompt)
+                logger.info(f"Model: {self.model} | Output length: {len(content)} chars")
                 if content:
-                    logger.info(
-                        f"Analysis succeeded via Responses API (max_output_tokens={max_output_tokens})"
-                    )
                     return content
 
-                # Empty content fallback with simplified prompt
-                logger.warning("Primary analysis returned empty content. Trying simplified prompt.")
-                simple_user = f"Суммируй в 5 пунктах на русском:\n\n{text[:4000]}"
-                resp2 = await self.client.responses.create(
-                    model=self.primary_model,
-                    instructions=(
-                        "Ты помощник по анализу контента. "
-                        "Отвечай исключительно на русском языке, даже если входные данные на другом языке. "
-                        "Пиши кратко и по делу."
+                # Empty content fallback with a simplified prompt
+                logger.warning("Analysis returned empty content. Trying simplified prompt.")
+                content = await self._create_response(
+                    (
+                        f"Ты {self.brand} — ассистент по анализу контента. "
+                        "Отвечай исключительно на русском языке, даже если входные данные "
+                        "на другом языке. Пиши кратко и по делу."
                     ),
-                    input=simple_user,
-                    max_output_tokens=max_output_tokens,
+                    f"Суммируй в 5 пунктах на русском:\n\n{text[:4000]}",
+                )
+                if content:
+                    logger.info("Analysis succeeded via simplified prompt")
+                    return content
+
+                logger.error("Both primary and simplified prompts returned empty content.")
+                return (
+                    "Получен пустой ответ анализа. Попробуйте другой ролик или повторите позже."
                 )
 
-                logger.info("Received response from simplified prompt attempt.")
-                logger.debug(f"OpenAI Simplified Response object: {resp2.model_dump_json(indent=2)}")
-
-                content2 = (resp2.output_text or "").strip()
-                logger.info(f"Model: {self.primary_model} | Simplified output length: {len(content2)} chars")
-                if content2:
-                    logger.info(
-                        f"Analysis succeeded via Responses API (simplified prompt)"
-                    )
-                    return content2
-
-                # Still empty
-                logger.error("Both primary and simplified prompts returned empty content.")
-                return "Получен пустой ответ анализа от модели. Попробуйте другой ролик или повторите позже."
-
             except Exception as e:
-                # Retry on transient failures
                 if attempt < 2:
                     wait = 2 ** attempt
-                    logger.warning(f"OpenAI error: {e}. Retrying in {wait}s...")
+                    logger.warning(f"{self.brand} error: {e}. Retrying in {wait}s...")
                     await asyncio.sleep(wait)
                     continue
-                logger.error(f"OpenAI API error after retries: {e}")
+                logger.error(f"{self.brand} API error after retries: {e}")
                 return "❌ Ошибка при анализе текста. Попробуйте позже."
 
         return "❌ Ошибка при анализе текста после всех попыток."
 
-    def _build_system_prompt(self, segments: Optional[List[Dict[str, Any]]]) -> str:
-        """Build the full TikTok analysis system prompt."""
-        logger.info("Using full TikTok analysis system prompt.")
+    def _build_system_prompt(self, segments: Optional[List[Dict[str, Any]]], source: str) -> str:
+        """Build the full analysis system prompt."""
+        logger.info(f"Using full {source} analysis system prompt.")
         seg_text = "есть" if segments else "нет"
         key_moments_line = (
             "Добавь 5 ключевых моментов с временными метками (формат мм:сс)."
@@ -111,11 +124,12 @@ class OpenAIClient:
         )
 
         prompt = (
-            "Ты виртуальный ассистент и эксперт по анализу контента.\n"
+            f"Ты {self.brand} — виртуальный ассистент и эксперт по анализу видеоконтента.\n"
             "Отвечай исключительно на русском языке, даже если входные данные на другом языке. "
             "Не используй другие языки в ответе. Весь вывод — на русском.\n"
-            "Используй модель GPT-5: думай шаг за шагом, соблюдай структуру, форматируй результат для маркетологов и создателей контента.\n\n"
-            "Контекст анализа: транскрипт или сценарий TikTok.\n"
+            "Думай шаг за шагом, соблюдай структуру, форматируй результат для маркетологов "
+            "и создателей контента.\n\n"
+            f"Контекст анализа: транскрипт или сценарий видео из {source}.\n"
             f"Дополнительные сегменты: {seg_text}.\n\n"
             "Сгенерируй ответ строго по разделам:\n"
             "1. РЕЗЮМЕ (5–6 предложений)\n"
@@ -146,7 +160,8 @@ class OpenAIClient:
             " • Будь краток, точен и сосредоточься на самых важных аспектах контента.\n"
             " • Пиши весь ответ на русском языке (включая возможные заголовки/ярлыки).\n"
             " • В конце напиши: ‘Структура соблюдена, формат понятен, все разделы выведены’.\n\n"
-            "Перед генерацией ответа: продумай решение внутренне (chain-of-thought), но не раскрывай ход рассуждений — выведи только итоговые секции."
+            "Перед генерацией ответа: продумай решение внутренне, но не раскрывай ход "
+            "рассуждений — выведи только итоговые секции."
         )
 
         return prompt

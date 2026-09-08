@@ -12,6 +12,9 @@ from pydantic_settings import SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
+    # Branding
+    brand_name: str = Field("ChatGPT Luna", env="BRAND_NAME")
+
     # Telegram Bot
     bot_token: str = Field(..., env="BOT_TOKEN")
 
@@ -22,25 +25,40 @@ class Settings(BaseSettings):
     openai_max_output_tokens: Optional[int] = Field(None, env="OPENAI_MAX_OUTPUT_TOKENS")
     openai_max_tokens: int = Field(8000, env="OPENAI_MAX_TOKENS")
 
-    # GPT-5.1 reasoning parameters
+    # Reasoning parameters
     openai_reasoning_effort: str = Field("medium", env="OPENAI_REASONING_EFFORT")  # none/low/medium/high
     openai_verbosity: str = Field("medium", env="OPENAI_VERBOSITY")  # low/medium/high
 
-    # Speech-to-Text (OpenAI Whisper API only)
+    # Speech-to-Text (OpenAI Audio API)
     stt_language: str = Field("auto", env="STT_LANGUAGE")  # auto/en/ru/...
+    stt_model: str = Field("whisper-1", env="STT_MODEL")
+
+    # Audio preparation (FFmpeg)
+    audio_bitrate: str = Field("64k", env="AUDIO_BITRATE")
+    audio_sample_rate: int = Field(16000, env="AUDIO_SAMPLE_RATE")
+    # Long audio is split into chunks before transcription (seconds)
+    audio_chunk_seconds: int = Field(600, env="AUDIO_CHUNK_SECONDS")
 
     # System
     workdir: Path = Field(Path("./data"), env="WORKDIR")
     log_level: str = Field("INFO", env="LOG_LEVEL")
-    
+
+    # Cookies for age/login restricted content (Instagram in particular)
+    instagram_cookies_file: Optional[Path] = Field(None, env="INSTAGRAM_COOKIES_FILE")
+    tiktok_cookies_file: Optional[Path] = Field(None, env="TIKTOK_COOKIES_FILE")
+
     # Rate limiting
     max_requests_per_minute: int = Field(5, env="MAX_REQUESTS_PER_MINUTE")
     max_requests_per_hour: int = Field(20, env="MAX_REQUESTS_PER_HOUR")
-    
+
     # File processing limits
-    max_file_size_mb: int = Field(50, env="MAX_FILE_SIZE_MB")
-    max_audio_duration_minutes: int = Field(10, env="MAX_AUDIO_DURATION_MINUTES")
-    
+    # Hard limit of the OpenAI audio endpoint is 25 MB per request; larger
+    # audio is transcoded and split into chunks instead of being rejected.
+    max_upload_size_mb: int = Field(24, env="MAX_UPLOAD_SIZE_MB")
+    # Upper bound for a downloaded media file before we even try to process it.
+    max_file_size_mb: int = Field(500, env="MAX_FILE_SIZE_MB")
+    max_audio_duration_minutes: int = Field(120, env="MAX_AUDIO_DURATION_MINUTES")
+
     # Message limits
     max_message_length: int = Field(4000, env="MAX_MESSAGE_LENGTH")
 

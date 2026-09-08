@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY ./app ./app
 COPY ./Makefile ./
 COPY ./README.md ./
+COPY ./test_setup.py ./
 
 # Optional data dir
 RUN mkdir -p /app/data

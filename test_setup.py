@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Test script to verify all dependencies are properly installed.
+Setup check: verifies dependencies, system tools and URL recognition.
 """
-import sys
+import os
 import subprocess
+import sys
 from pathlib import Path
+
+BRAND = os.getenv("BRAND_NAME", "ChatGPT Luna")
+
 
 def test_import(module_name, package_name=None):
     """Test if a module can be imported."""
@@ -16,36 +20,68 @@ def test_import(module_name, package_name=None):
         print(f"❌ {package_name or module_name}: {e}")
         return False
 
-def test_command(command, description):
+
+def test_command(command, description, required=True):
     """Test if a command is available."""
     try:
-        result = subprocess.run([command, '--version'], 
-                              capture_output=True, text=True, timeout=10)
+        result = subprocess.run([command, '-version'],
+                                capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
             print(f"✅ {description}")
             return True
-        else:
-            print(f"❌ {description}: Command failed")
-            return False
+        print(f"{'❌' if required else '⚠️ '} {description}: command failed")
+        return not required
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        print(f"❌ {description}: {e}")
+        print(f"{'❌' if required else '⚠️ '} {description}: {e}")
+        return not required
+
+
+def test_url_detection():
+    """Check that supported links are recognised for both platforms."""
+    # Dummy credentials so that importing settings does not fail on a fresh checkout
+    os.environ.setdefault("BOT_TOKEN", "test")
+    os.environ.setdefault("OPENAI_API_KEY", "test")
+
+    try:
+        from app.utils import detect_platform
+    except Exception as e:
+        print(f"❌ Не удалось импортировать app.utils: {e}")
         return False
 
+    cases = [
+        ("https://www.tiktok.com/@user/video/1234567890", "tiktok"),
+        ("https://vt.tiktok.com/ZSabcdef/", "tiktok"),
+        ("https://vm.tiktok.com/ZSabcdef/", "tiktok"),
+        ("https://www.instagram.com/reel/Cxyz12345/", "instagram"),
+        ("https://instagram.com/p/Cxyz12345/", "instagram"),
+        ("https://www.instagram.com/tv/Cxyz12345/", "instagram"),
+        ("https://youtube.com/watch?v=abc", None),
+        ("not a url", None),
+    ]
+
+    ok = True
+    for url, expected in cases:
+        actual = detect_platform(url)
+        if actual == expected:
+            print(f"✅ {url} → {actual}")
+        else:
+            print(f"❌ {url} → {actual} (ожидалось {expected})")
+            ok = False
+    return ok
+
+
 def main():
-    """Run all tests."""
-    print("🔍 Testing TikTok Bot Setup...\n")
-    
-    # Test Python version
+    """Run all checks."""
+    print(f"🔍 Проверка окружения {BRAND}...\n")
+
     python_version = sys.version_info
     if python_version >= (3, 11):
         print(f"✅ Python {python_version.major}.{python_version.minor}.{python_version.micro}")
     else:
-        print(f"❌ Python {python_version.major}.{python_version.minor}.{python_version.micro} (requires 3.11+)")
+        print(f"❌ Python {python_version.major}.{python_version.minor} (нужен 3.11+)")
         return False
-    
-    print("\n📦 Testing Python Dependencies:")
-    
-    # Test required packages
+
+    print("\n📦 Python-зависимости:")
     packages = [
         ('aiogram', 'aiogram'),
         ('yt_dlp', 'yt-dlp'),
@@ -53,62 +89,56 @@ def main():
         ('pydantic', 'pydantic'),
         ('pydantic_settings', 'pydantic-settings'),
         ('httpx', 'httpx'),
+        ('aiohttp', 'aiohttp'),
     ]
-    
-    all_packages_ok = True
-    for module, package in packages:
-        if not test_import(module, package):
-            all_packages_ok = False
-    
-    print("\n🛠️ Testing System Dependencies:")
-    
-    # Test system commands
-    commands = [
-        ('ffmpeg', 'FFmpeg'),
-        ('ffprobe', 'FFprobe'),
-    ]
-    
-    all_commands_ok = True
-    for command, description in commands:
-        if not test_command(command, description):
-            all_commands_ok = False
-    
-    print("\n📁 Testing Project Structure:")
-    
-    # Test project files
+    all_packages_ok = all(test_import(module, package) for module, package in packages)
+
+    print("\n🛠️ Системные зависимости:")
+    all_commands_ok = all([
+        test_command('ffmpeg', 'FFmpeg (обязателен для длинных видео)'),
+        test_command('ffprobe', 'FFprobe (обязателен для длинных видео)'),
+    ])
+
+    print("\n📁 Структура проекта:")
     required_files = [
-        '.env',
         'requirements.txt',
         'app/config.py',
         'app/bot.py',
-        'data/',
+        'app/audio.py',
+        'app/handlers.py',
     ]
-    
     all_files_ok = True
     for file_path in required_files:
         if Path(file_path).exists():
             print(f"✅ {file_path}")
         else:
-            print(f"❌ {file_path} (missing)")
+            print(f"❌ {file_path} (отсутствует)")
             all_files_ok = False
-    
-    print("\n" + "="*50)
-    
-    if all_packages_ok and all_commands_ok and all_files_ok:
-        print("🎉 All tests passed! Your setup is ready.")
-        print("\nNext steps:")
-        print("1. Configure your .env file with API keys")
-        print("2. Run: python -m app.bot")
-        return True
+
+    if Path('.env').exists():
+        print("✅ .env")
     else:
-        print("❌ Some tests failed. Please fix the issues above.")
-        print("\nCommon fixes:")
-        print("- Install missing packages: pip install -r requirements.txt")
-        print("- Install FFmpeg: https://ffmpeg.org/download.html")
-        print("- Copy env.example to .env and configure it")
-        return False
+        print("⚠️  .env отсутствует — скопируйте env.example в .env")
+
+    print("\n🔗 Распознавание ссылок:")
+    urls_ok = test_url_detection()
+
+    print("\n" + "=" * 50)
+
+    if all_packages_ok and all_commands_ok and all_files_ok and urls_ok:
+        print(f"🎉 Все проверки пройдены. {BRAND} готов к запуску.")
+        print("\nДальше:")
+        print("1. Заполните .env (BOT_TOKEN, OPENAI_API_KEY)")
+        print("2. Запустите: python -m app.bot")
+        return True
+
+    print("❌ Часть проверок не пройдена.")
+    print("\nЧастые решения:")
+    print("- Установить зависимости: pip install -r requirements.txt")
+    print("- Установить FFmpeg: https://ffmpeg.org/download.html")
+    print("- Скопировать env.example в .env и заполнить ключи")
+    return False
+
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
-
+    sys.exit(0 if main() else 1)

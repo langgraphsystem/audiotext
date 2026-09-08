@@ -11,13 +11,16 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 from aiohttp import web
 
+from .audio import ffmpeg_path
 from .config import settings
 from .handlers import router
 from .logger import logger
+from .stt_openai_api import close_client as close_stt_client
 
 # Enable uvloop on Linux for better performance
 if platform.system() == "Linux":
@@ -29,94 +32,119 @@ if platform.system() == "Linux":
         logger.warning("uvloop not available, using default event loop")
 
 
-async def main():
-    """Main bot function."""
-    logger.info("Starting TikTok Content Analyzer Bot...")
-    
-    # Initialize bot and dispatcher
-    bot = Bot(token=settings.bot_token)
-    storage = MemoryStorage()
-    dp = Dispatcher(storage=storage)
-    
-    # Register routers
+BOT_COMMANDS = [
+    BotCommand(command="start", description="Начать работу"),
+    BotCommand(command="help", description="Справка"),
+]
+
+
+def log_startup_info() -> None:
+    """Log the effective configuration (without sensitive data)."""
+    brand = settings.brand_name
+    logger.info(f"🌙 {brand} · анализатор видеоконтента запущен")
+    logger.info(f"🧠 Модель анализа: {settings.openai_model}")
+    logger.info(f"🎤 Распознавание речи: OpenAI Audio API ({settings.stt_model})")
+    logger.info(f"🔤 Язык распознавания: {settings.stt_language}")
+    logger.info("🌐 Платформы: TikTok, Instagram")
+    logger.info(f"📁 Рабочая директория: {settings.workdir}")
+    logger.info(
+        f"⏱️ Лимиты: {settings.max_requests_per_minute}/мин, "
+        f"{settings.max_requests_per_hour}/час"
+    )
+    logger.info(
+        f"📊 Ограничения медиа: до {settings.max_file_size_mb} МБ, "
+        f"до {settings.max_audio_duration_minutes} мин, "
+        f"куски по {settings.audio_chunk_seconds} с (лимит загрузки "
+        f"{settings.max_upload_size_mb} МБ)"
+    )
+
+    if ffmpeg_path():
+        logger.info("🎬 FFmpeg найден: длинные видео будут разбиваться на части")
+    else:
+        logger.warning(
+            "⚠️ FFmpeg не найден: длинные видео обработать не получится. "
+            "Установите ffmpeg."
+        )
+
+
+def create_dispatcher() -> Dispatcher:
+    """Create the dispatcher with all routers registered."""
+    dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
-    
-    # Log startup info (without sensitive data)
-    logger.info("🤖 TikTok Content Analyzer Bot initialized successfully")
-    logger.info(f"🧠 Primary AI model: {settings.openai_model}")
-    logger.info("🔄 GPT-5 Exclusive: Pure GPT-5 processing")
-    logger.info("🎤 STT engine: OpenAI Whisper API")
-    logger.info(f"🔤 STT language: {settings.stt_language}")
-    logger.info(f"📁 Work directory: {settings.workdir}")
-    logger.info(f"⏱️ Rate limits: {settings.max_requests_per_minute}/min, {settings.max_requests_per_hour}/hour")
-    logger.info(f"📊 File limits: {settings.max_file_size_mb}MB, {settings.max_audio_duration_minutes}min")
-    logger.info(f"🔤 Max tokens: {settings.openai_max_tokens}")
-    
+    return dp
+
+
+async def main():
+    """Run the bot in polling mode."""
+    logger.info(f"Starting {settings.brand_name} bot...")
+
+    bot = Bot(token=settings.bot_token)
+    dp = create_dispatcher()
+
+    log_startup_info()
+
     try:
-        # Start polling
+        await bot.set_my_commands(BOT_COMMANDS)
+        await bot.delete_webhook(drop_pending_updates=False)
         logger.info("Starting bot in polling mode...")
         await dp.start_polling(bot)
-        
-    except KeyboardInterrupt:
+
+    except (KeyboardInterrupt, SystemExit):
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Bot error: {e}")
     finally:
+        await close_stt_client()
         await bot.session.close()
         logger.info("Bot shutdown complete")
 
 
 async def webhook_main():
-    """Webhook mode for production deployment."""
-    logger.info("Starting TikTok Content Analyzer Bot in webhook mode...")
-    
-    # Initialize bot and dispatcher
+    """Run the bot in webhook mode for production deployment."""
+    logger.info(f"Starting {settings.brand_name} bot in webhook mode...")
+
     bot = Bot(token=settings.bot_token)
-    storage = MemoryStorage()
-    dp = Dispatcher(storage=storage)
-    
-    # Register routers
-    dp.include_router(router)
-    
-    # Setup webhook
+    dp = create_dispatcher()
+
+    log_startup_info()
+
     app = web.Application()
-    
-    # Webhook endpoint
-    WEBHOOK_PATH = settings.webhook_path
-    base_url = settings.webhook_base_url or "https://your-domain.com"
-    WEBHOOK_URL = f"{base_url}{WEBHOOK_PATH}"
-    
-    # Set webhook
-    await bot.set_webhook(url=WEBHOOK_URL)
-    
-    # Setup webhook handler
-    webhook_handler = SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot
-    )
-    webhook_handler.register(app, path=WEBHOOK_PATH)
-    
-    # Health check endpoint
+
+    webhook_path = settings.webhook_path
+    base_url = (settings.webhook_base_url or "https://your-domain.com").rstrip("/")
+    webhook_url = f"{base_url}{webhook_path}"
+
+    await bot.set_my_commands(BOT_COMMANDS)
+    await bot.set_webhook(url=webhook_url, drop_pending_updates=False)
+
+    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=webhook_path)
+
     async def health_check(request):
         return web.Response(text="OK")
-    
+
     app.router.add_get("/healthz", health_check)
-    
-    # Start webhook
-    logger.info(f"Webhook set to: {WEBHOOK_URL}")
-    logger.info("Starting webhook server...")
-    
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host=settings.webhook_host, port=settings.webhook_port)
+
+    logger.info(f"Webhook set to: {webhook_url}")
+    logger.info(f"Listening on {settings.webhook_host}:{settings.webhook_port}")
+
     try:
-        web.run_app(app, host=settings.webhook_host, port=settings.webhook_port)
-    except KeyboardInterrupt:
-        logger.info("Webhook server stopped by user")
+        await site.start()
+        # Serve until cancelled
+        await asyncio.Event().wait()
+    except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
+        logger.info("Webhook server stopped")
     finally:
+        await runner.cleanup()
+        await close_stt_client()
         await bot.session.close()
         logger.info("Webhook server shutdown complete")
 
 
 if __name__ == "__main__":
-    # Check if webhook mode is requested
     if len(sys.argv) > 1 and sys.argv[1] == "--webhook":
         asyncio.run(webhook_main())
     else:
