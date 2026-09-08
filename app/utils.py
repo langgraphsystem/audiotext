@@ -14,6 +14,25 @@ from .logger import get_logger
 logger = get_logger(__name__)
 
 
+# Markers of "this key cannot use this model" in provider error messages
+MODEL_UNAVAILABLE_MARKERS = (
+    "model_not_found",
+    "does not exist",
+    "do not have access",
+    "not have access",
+    "unknown model",
+    "invalid model",
+    "unsupported model",
+    "model is not supported",
+)
+
+
+def is_model_unavailable_error(error: Exception) -> bool:
+    """Whether the error means the model itself is unusable for this key."""
+    text = str(error).lower()
+    return any(marker in text for marker in MODEL_UNAVAILABLE_MARKERS)
+
+
 # Supported platforms and the domains they are recognised by.
 PLATFORM_DOMAINS = {
     'tiktok': ('tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com'),

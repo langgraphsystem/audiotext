@@ -8,28 +8,10 @@ from openai import AsyncOpenAI
 
 from .config import settings
 from .logger import get_logger
-from .utils import platform_title
+from .utils import is_model_unavailable_error, platform_title
 
 
 logger = get_logger(__name__)
-
-# Markers of "this key cannot use this model" in provider error messages
-_MODEL_UNAVAILABLE_MARKERS = (
-    "model_not_found",
-    "does not exist",
-    "do not have access",
-    "not have access",
-    "unknown model",
-    "invalid model",
-    "unsupported model",
-    "model is not supported",
-)
-
-
-def _is_model_unavailable(error: Exception) -> bool:
-    """Whether the error means the model itself is unusable for this key."""
-    text = str(error).lower()
-    return any(marker in text for marker in _MODEL_UNAVAILABLE_MARKERS)
 
 
 class OpenAIClient:
@@ -98,7 +80,7 @@ class OpenAIClient:
             resp = await self.client.responses.create(**kwargs)
         except Exception as e:
             # Older models reject reasoning/verbosity: retry with a plain call.
-            if not _is_model_unavailable(e) and ("reasoning" in kwargs or "text" in kwargs):
+            if not is_model_unavailable_error(e) and ("reasoning" in kwargs or "text" in kwargs):
                 logger.warning(f"Retrying without reasoning/verbosity controls: {e}")
                 kwargs.pop("reasoning", None)
                 kwargs.pop("text", None)
@@ -117,7 +99,7 @@ class OpenAIClient:
             try:
                 content = await self._call_model(model, instructions, user_input)
             except Exception as e:
-                if _is_model_unavailable(e):
+                if is_model_unavailable_error(e):
                     logger.warning(f"Модель {model} недоступна для этого ключа: {e}")
                     last_error = e
                     continue

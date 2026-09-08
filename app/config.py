@@ -43,7 +43,12 @@ class Settings(BaseSettings):
 
     # Speech-to-Text (OpenAI Audio API)
     stt_language: str = "auto"  # auto/en/ru/...
-    stt_model: str = "whisper-1"
+    # gpt-transcribe is OpenAI's recommended transcription model; whisper-1
+    # stays available as a fallback for keys without access to it
+    stt_model: str = "gpt-transcribe"
+    stt_fallback_models: str = "whisper-1"
+    # Ask for segment timestamps (needed for timestamped highlights)
+    stt_timestamps: bool = True
     # Transcription may live on a different provider than the analysis model
     stt_api_key: Optional[str] = None
     stt_base_url: Optional[str] = None
@@ -132,6 +137,11 @@ class Settings(BaseSettings):
     def fallback_models(self) -> list[str]:
         """Analysis models to try if the configured one is not available."""
         return [m.strip() for m in self.openai_fallback_models.split(",") if m.strip()]
+
+    @property
+    def stt_fallbacks(self) -> list[str]:
+        """Transcription models to try if the configured one is unavailable."""
+        return [m.strip() for m in self.stt_fallback_models.split(",") if m.strip()]
 
     @property
     def stt_credentials(self) -> tuple[str, Optional[str]]:

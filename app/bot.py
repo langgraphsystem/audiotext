@@ -75,6 +75,8 @@ def log_startup_info() -> None:
     if settings.fallback_models:
         logger.info(f"↩️ Резервные модели: {', '.join(settings.fallback_models)}")
     logger.info(f"🎤 Распознавание речи: OpenAI Audio API ({settings.stt_model})")
+    if settings.stt_fallbacks:
+        logger.info(f"↩️ Резервные модели распознавания: {', '.join(settings.stt_fallbacks)}")
     logger.info(f"🔤 Язык распознавания: {settings.stt_language}")
     logger.info("🌐 Платформы: TikTok, Instagram")
     logger.info(f"📁 Рабочая директория: {settings.workdir}")

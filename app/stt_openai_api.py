@@ -11,14 +11,34 @@ from openai import AsyncOpenAI
 
 from .config import settings
 from .logger import get_logger
+from .utils import is_model_unavailable_error
 
 logger = get_logger(__name__)
 
 
 _client: Optional[AsyncOpenAI] = None
 
-# Models that support verbose_json (and therefore timestamped segments).
-_SEGMENT_CAPABLE_MODELS = {"whisper-1"}
+# Markers of "this parameter/value is not supported by that model"
+_UNSUPPORTED_PARAM_MARKERS = (
+    "verbose_json",
+    "timestamp_granularities",
+    "response_format",
+    "unsupported_value",
+    "unsupported parameter",
+    "unknown parameter",
+    "temperature",
+    "is not supported with this model",
+)
+
+# Model that worked last time, so degraded settings are not re-discovered
+# on every chunk of the same file.
+_working_model: Optional[str] = None
+
+
+def _is_unsupported_param(error: Exception) -> bool:
+    """Whether the error is about an option the model does not accept."""
+    text = str(error).lower()
+    return any(marker in text for marker in _UNSUPPORTED_PARAM_MARKERS)
 
 
 def get_client() -> AsyncOpenAI:
@@ -64,6 +84,43 @@ def _normalize_segments(raw_segments) -> List[Dict[str, Any]]:
     return segments
 
 
+def _request_variants(
+    model: str, language: Optional[str], temperature: float
+) -> List[Dict[str, Any]]:
+    """Request options from richest to plainest.
+
+    Timestamped segments need verbose_json; a model that rejects it still
+    produces usable text through a plain json request.
+    """
+    variants: List[Dict[str, Any]] = []
+
+    if settings.stt_timestamps:
+        verbose: Dict[str, Any] = {
+            "model": model,
+            "response_format": "verbose_json",
+            "timestamp_granularities": ["segment"],
+        }
+        if language:
+            verbose["language"] = language
+        variants.append({**verbose, "temperature": temperature})
+        variants.append(verbose)
+        variants.append({k: v for k, v in verbose.items()
+                         if k != "timestamp_granularities"})
+
+    plain: Dict[str, Any] = {"model": model, "response_format": "json"}
+    if language:
+        plain["language"] = language
+    variants.append(plain)
+    variants.append({"model": model, "response_format": "json"})
+
+    # Drop duplicates while preserving order
+    unique: List[Dict[str, Any]] = []
+    for v in variants:
+        if v not in unique:
+            unique.append(v)
+    return unique
+
+
 async def transcribe_audio_file(
     audio_path: Path,
     *,
@@ -85,38 +142,69 @@ async def transcribe_audio_file(
     if not audio_path.exists():
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
+    global _working_model
+
     client = get_client()
-    use_model = model or settings.stt_model or "whisper-1"
     lang_arg = None if not language or language.lower() == "auto" else language
-    response_format = "verbose_json" if use_model in _SEGMENT_CAPABLE_MODELS else "json"
 
-    logger.info(
-        f"Submitting audio to OpenAI STT | file={audio_path.name} | "
-        f"model={use_model} | lang={lang_arg or 'auto'}"
-    )
+    # Configured model first, then fallbacks; stick to the one that worked
+    candidates: List[str] = []
+    for candidate in [model or _working_model or settings.stt_model,
+                      settings.stt_model, *settings.stt_fallbacks]:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
 
-    kwargs: Dict[str, Any] = {
-        "model": use_model,
-        "response_format": response_format,
-        "language": lang_arg,
-    }
-    if response_format == "verbose_json":
-        kwargs["temperature"] = temperature
+    resp = None
+    used_model = candidates[0]
+    last_error: Optional[Exception] = None
 
-    try:
-        with open(audio_path, "rb") as f:
-            resp = await client.audio.transcriptions.create(file=f, **kwargs)
-    except Exception as e:
-        logger.error(f"OpenAI STT API error: {e}")
-        raise
+    for use_model in candidates:
+        logger.info(
+            f"Submitting audio to OpenAI STT | file={audio_path.name} | "
+            f"model={use_model} | lang={lang_arg or 'auto'}"
+        )
+
+        for variant in _request_variants(use_model, lang_arg, temperature):
+            try:
+                with open(audio_path, "rb") as f:
+                    resp = await client.audio.transcriptions.create(file=f, **variant)
+            except Exception as e:
+                last_error = e
+                if is_model_unavailable_error(e):
+                    logger.warning(f"Модель распознавания {use_model} недоступна: {e}")
+                    break  # try the next model
+                if _is_unsupported_param(e):
+                    logger.warning(
+                        f"{use_model} не принял параметры "
+                        f"({', '.join(k for k in variant if k != 'model')}): {e}"
+                    )
+                    continue  # try a simpler request
+                logger.error(f"OpenAI STT API error: {e}")
+                raise
+
+            used_model = use_model
+            break
+
+        if resp is not None:
+            break
+
+    if resp is None:
+        raise RuntimeError(
+            f"Расшифровка не удалась ни одной из моделей: {', '.join(candidates)}"
+        ) from last_error
+
+    if used_model != _working_model:
+        if _working_model is not None:
+            logger.warning(f"Переключился на модель распознавания: {used_model}")
+        _working_model = used_model
 
     text = (getattr(resp, "text", "") or "").strip()
     segments = _normalize_segments(getattr(resp, "segments", None))
     language_val = getattr(resp, "language", None)
 
     logger.info(
-        f"OpenAI STT done | chars={len(text)} | segments={len(segments)} | "
-        f"lang={language_val or 'n/a'}"
+        f"OpenAI STT done | model={used_model} | chars={len(text)} | "
+        f"segments={len(segments)} | lang={language_val or 'n/a'}"
     )
 
     return {"text": text, "segments": segments, "language": language_val}

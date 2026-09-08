@@ -79,7 +79,7 @@ python -m app.bot
 ```
 | INFO | 🌙 ChatGPT Luna · анализатор видеоконтента запущен
 | INFO | 🧠 Модель ИИ: Luna (backend: gpt-5.6-luna)
-| INFO | 🎤 Распознавание речи: OpenAI Audio API (whisper-1)
+| INFO | 🎤 Распознавание речи: OpenAI Audio API (gpt-transcribe)
 | INFO | 🌐 Платформы: TikTok, Instagram
 | INFO | 🎬 FFmpeg найден: длинные видео будут разбиваться на части
 | INFO | Starting bot in polling mode...
