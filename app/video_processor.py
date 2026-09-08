@@ -123,6 +123,7 @@ Powered by {brand} | Content Intelligence Platform
 ═══════════════════════════════════════════════════════════════
 Дата анализа: {time.strftime('%Y-%m-%d %H:%M:%S')}
 Ассистент: {brand}
+Модель ИИ: {settings.model_display_name}
 ═══════════════════════════════════════════════════════════════
 
 """

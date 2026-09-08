@@ -32,6 +32,7 @@ logger = get_logger(__name__)
 router = Router()
 
 BRAND = settings.brand_name
+MODEL = settings.model_display_name
 
 
 class ProcessingStates(StatesGroup):
@@ -64,6 +65,7 @@ class StatusMessage:
 async def cmd_start(message: Message):
     """Handle /start command."""
     welcome_text = f"""🌙 **{BRAND} — анализатор видеоконтента**
+_Модель ИИ: {MODEL}_
 
 Отправь ссылку на **TikTok** или **Instagram** видео, и я:
 1. 📝 Извлеку субтитры (если доступны)
@@ -109,11 +111,11 @@ async def cmd_help(message: Message):
 1. **Проверка субтитров** — сначала ищем готовые субтитры
 2. **Скачивание аудио** — качаем только аудиодорожку, без видео
 3. **Расшифровка** — длинное аудио автоматически делится на части
-4. **Анализ** — {BRAND} проводит глубокий многоуровневый анализ контента
+4. **Анализ** — модель ИИ {MODEL} проводит глубокий многоуровневый анализ контента
 
 **Результат:**
 • 📄 Текстовый файл (субтитры или расшифровка)
-• 📊 Профессиональный отчёт от {BRAND} с инсайтами и рекомендациями
+• 📊 Профессиональный отчёт модели {MODEL} с инсайтами и рекомендациями
 
 **Ограничения:**
 • Длительность: до {settings.max_audio_duration_minutes} мин
@@ -247,7 +249,7 @@ async def handle_video_url(message: Message, state: FSMContext):
                 logger.warning(f"Failed to send document: {e}")
 
         # Step 4: analysis
-        await status.set(f"🧠 {BRAND} анализирует контент...")
+        await status.set(f"🧠 Модель {MODEL} анализирует контент...")
 
         try:
             analysis, analysis_path = await processor.analyze_content(
@@ -271,7 +273,8 @@ async def handle_video_url(message: Message, state: FSMContext):
                         analysis_path, filename=f"{BRAND.replace(' ', '_')}_Analysis.txt"
                     )
                     await message.answer_document(
-                        document, caption=f"🌙 Профессиональный анализ | {BRAND} · {source}"
+                        document,
+                        caption=f"🌙 Профессиональный анализ | {BRAND} · модель {MODEL} · {source}",
                     )
                     sent_as_file = True
                 except TelegramBadRequest as e:

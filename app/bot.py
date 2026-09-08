@@ -67,7 +67,10 @@ def log_startup_info() -> None:
     """Log the effective configuration (without sensitive data)."""
     brand = settings.brand_name
     logger.info(f"🌙 {brand} · анализатор видеоконтента запущен")
-    logger.info(f"🧠 Модель анализа: {settings.openai_model}")
+    logger.info(
+        f"🧠 Модель ИИ: {settings.model_display_name} "
+        f"(backend: {settings.openai_model})"
+    )
     logger.info(f"🎤 Распознавание речи: OpenAI Audio API ({settings.stt_model})")
     logger.info(f"🔤 Язык распознавания: {settings.stt_language}")
     logger.info("🌐 Платформы: TikTok, Instagram")

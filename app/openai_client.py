@@ -21,8 +21,12 @@ class OpenAIClient:
         self.api_key = settings.openai_api_key
         self.model = settings.openai_model
         self.brand = settings.brand_name
+        self.model_name = settings.model_display_name
         self.client = AsyncOpenAI(api_key=self.api_key, timeout=180.0)
-        logger.info(f"{self.brand} client initialized with model: {self.model}")
+        logger.info(
+            f"{self.brand} client initialized | модель ИИ: {self.model_name} "
+            f"| backend: {self.model}"
+        )
 
     def _request_kwargs(self, instructions: str, user_input: str) -> Dict[str, Any]:
         """Build Responses API kwargs, including reasoning/verbosity controls."""
@@ -87,7 +91,8 @@ class OpenAIClient:
                 logger.warning("Analysis returned empty content. Trying simplified prompt.")
                 content = await self._create_response(
                     (
-                        f"Ты {self.brand} — ассистент по анализу контента. "
+                        f"Ты — модель ИИ {self.model_name} в составе {self.brand}, "
+                        "ассистент по анализу контента. "
                         "Отвечай исключительно на русском языке, даже если входные данные "
                         "на другом языке. Пиши кратко и по делу."
                     ),
@@ -124,7 +129,9 @@ class OpenAIClient:
         )
 
         prompt = (
-            f"Ты {self.brand} — виртуальный ассистент и эксперт по анализу видеоконтента.\n"
+            f"Ты — модель ИИ {self.model_name}, ассистент {self.brand} "
+            "и эксперт по анализу видеоконтента.\n"
+            f"Если спрашивают, какая модель отвечает, называй себя: {self.model_name}.\n"
             "Отвечай исключительно на русском языке, даже если входные данные на другом языке. "
             "Не используй другие языки в ответе. Весь вывод — на русском.\n"
             "Думай шаг за шагом, соблюдай структуру, форматируй результат для маркетологов "

@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     # Branding
     brand_name: str = "ChatGPT Luna"
+    # Name of the AI model shown to users; the technical id stays in OPENAI_MODEL
+    model_display_name: str = "Luna"
 
     # Telegram Bot
     bot_token: str
