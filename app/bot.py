@@ -6,6 +6,7 @@ import platform
 import signal
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -19,7 +20,9 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 from aiohttp import web
 
 from .audio import ffmpeg_path
+from .collector import scheduled_scans
 from .config import settings
+from .sources import tracked_accounts
 from .handlers import router
 from .logger import logger
 from .stt_openai_api import close_client as close_stt_client
@@ -37,6 +40,9 @@ if platform.system() == "Linux":
 BOT_COMMANDS = [
     BotCommand(command="start", description="Начать работу"),
     BotCommand(command="help", description="Справка"),
+    BotCommand(command="sources", description="Отслеживаемые аккаунты"),
+    BotCommand(command="scan", description="Собрать новые публикации"),
+    BotCommand(command="digest", description="Выгрузка материала"),
 ]
 
 # Leftovers from a previous run: hosts like Railway restart the container
@@ -96,6 +102,23 @@ def log_startup_info() -> None:
     else:
         logger.info("🔄 Режим: polling (публичный домен не задан)")
 
+    accounts = tracked_accounts()
+    if accounts:
+        logger.info(
+            f"📚 Отслеживаемых аккаунтов: {len(accounts)} "
+            f"({', '.join(a.label for a in accounts[:5])}"
+            f"{'...' if len(accounts) > 5 else ''})"
+        )
+        interval = settings.source_scan_interval_hours
+        logger.info(
+            f"🗓 Плановый сбор: каждые {interval} ч"
+            if interval > 0 else "🗓 Плановый сбор выключен"
+        )
+    else:
+        logger.info("📚 Отслеживаемые аккаунты не заданы (SOURCE_ACCOUNTS)")
+
+    logger.info(f"🗄 База собранного: {settings.database_path}")
+
     if ffmpeg_path():
         logger.info("🎬 FFmpeg найден: длинные видео будут разбиваться на части")
     else:
@@ -103,6 +126,33 @@ def log_startup_info() -> None:
             "⚠️ FFmpeg не найден: длинные видео обработать не получится. "
             "Установите ffmpeg."
         )
+
+
+def start_collector(bot: Bot) -> Optional[asyncio.Task]:
+    """Launch the scheduled collection loop, if it is configured."""
+    if settings.source_scan_interval_hours <= 0 or not settings.accounts:
+        return None
+
+    async def notify(text: str) -> None:
+        if settings.admin_chat_id is None:
+            return
+        try:
+            await bot.send_message(settings.admin_chat_id, text)
+        except Exception as e:
+            logger.warning(f"Не удалось отправить сводку сбора: {e}")
+
+    return asyncio.create_task(scheduled_scans(notify))
+
+
+async def stop_collector(task: Optional[asyncio.Task]) -> None:
+    """Cancel the collection loop on shutdown."""
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):
+        pass
 
 
 def create_dispatcher() -> Dispatcher:
@@ -122,6 +172,8 @@ async def main():
     log_startup_info()
     clean_workdir()
 
+    scan_task = start_collector(bot)
+
     try:
         await bot.set_my_commands(BOT_COMMANDS)
         await bot.delete_webhook(drop_pending_updates=False)
@@ -139,6 +191,7 @@ async def main():
     except Exception as e:
         logger.error(f"Bot error: {e}")
     finally:
+        await stop_collector(scan_task)
         await close_stt_client()
         await bot.session.close()
         logger.info("Bot shutdown complete")

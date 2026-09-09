@@ -26,6 +26,10 @@ from .stt_engine import STTEngine
 from .openai_client import OpenAIClient
 from .video_processor import VideoProcessor
 from .rate_limiter import rate_limiter
+from .collector import Collector
+from .export import write_digest
+from .sources import tracked_accounts
+from .storage import get_storage
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -100,6 +104,9 @@ async def cmd_help(message: Message):
 **Команды:**
 • `/start` - Показать приветственное сообщение
 • `/help` - Показать эту справку
+• `/sources` - Отслеживаемые аккаунты и статистика сбора
+• `/scan` - Собрать новые публикации прямо сейчас
+• `/digest` - Выгрузка собранного материала файлом
 
 **Поддерживаемые ссылки:**
 • `https://www.tiktok.com/@username/video/...`
@@ -131,6 +138,112 @@ async def cmd_help(message: Message):
 
 
 # search mode: the link may appear anywhere in the message, not only at the start
+
+
+def _is_admin(message: Message) -> bool:
+    """Whether this chat may run collection commands."""
+    if settings.admin_chat_id is None:
+        return True
+    return message.chat.id == settings.admin_chat_id
+
+
+@router.message(F.text.startswith("/sources"))
+async def cmd_sources(message: Message):
+    """Show tracked accounts and what has been collected so far."""
+    accounts = tracked_accounts()
+    stats = get_storage().stats()
+
+    lines = ["📚 **Сбор материала**", ""]
+
+    if accounts:
+        lines.append("**Отслеживаемые аккаунты:**")
+        lines += [f"• {a.label}" for a in accounts]
+    else:
+        lines.append("Аккаунты не заданы — заполните `SOURCE_ACCOUNTS`.")
+
+    lines += [
+        "",
+        f"**В базе:** {stats['ok']} публикаций"
+        + (f" (ошибок: {stats['failed']})" if stats["failed"] else ""),
+    ]
+
+    if stats["per_account"]:
+        lines.append("")
+        lines += [f"• @{a} — {c}" for a, c in stats["per_account"].items()]
+
+    if stats["last_processed_at"]:
+        import time as _time
+        when = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(stats["last_processed_at"]))
+        lines += ["", f"Последний сбор: {when}"]
+
+    interval = settings.source_scan_interval_hours
+    lines.append(
+        f"Расписание: каждые {interval} ч" if interval > 0 else "Расписание: выключено"
+    )
+
+    await message.answer("\n".join(lines), parse_mode="Markdown")
+
+
+@router.message(F.text.startswith("/scan"))
+async def cmd_scan(message: Message):
+    """Run a collection pass on demand."""
+    if not _is_admin(message):
+        await message.answer("⛔ Команда доступна только в админском чате.")
+        return
+
+    if not tracked_accounts():
+        await message.answer("❌ Список аккаунтов пуст. Заполните `SOURCE_ACCOUNTS`.")
+        return
+
+    status = StatusMessage(message)
+    await status.set("🔍 Обхожу аккаунты...")
+
+    try:
+        result = await Collector().scan(progress=status.set)
+        await status.set(f"✅ Сбор завершён\n\n{result.summary()}")
+
+        if result.collected:
+            await message.answer(
+                "Готово. `/digest` — выгрузка материала файлом.", parse_mode="Markdown"
+            )
+    except Exception as e:
+        logger.error(f"Сбор не удался: {e}")
+        await status.set(f"❌ Сбор не удался: {e}")
+
+
+@router.message(F.text.startswith("/digest"))
+async def cmd_digest(message: Message):
+    """Send the collected material as one file."""
+    parts = (message.text or "").split()
+    limit = 20
+    if len(parts) > 1 and parts[1].isdigit():
+        limit = max(1, min(200, int(parts[1])))
+
+    stats = get_storage().stats()
+    if not stats["ok"]:
+        await message.answer(
+            "📭 База пуста. Запустите `/scan` или отправьте ссылку.", parse_mode="Markdown"
+        )
+        return
+
+    await message.answer(f"📦 Собираю выгрузку по последним {limit} публикациям...")
+
+    try:
+        path = await asyncio.to_thread(write_digest, limit)
+        document = FSInputFile(path, filename=path.name)
+        await message.answer_document(
+            document,
+            caption=(
+                "🗂 Материал для производства контента.\n"
+                "Откройте файл в приложении Claude и попросите подготовить сценарии."
+            ),
+        )
+        cleanup_temp_files(path)
+    except Exception as e:
+        logger.error(f"Выгрузка не удалась: {e}")
+        await message.answer(f"❌ Не удалось собрать выгрузку: {e}")
+
+
 @router.message(F.text.regexp(SUPPORTED_URL_REGEX, mode="search"))
 async def handle_video_url(message: Message, state: FSMContext):
     """Handle TikTok and Instagram URL messages."""

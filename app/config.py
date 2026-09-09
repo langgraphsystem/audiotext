@@ -67,8 +67,20 @@ class Settings(BaseSettings):
     vision_max_duration_minutes: int = 20
     vision_max_height: int = 480
 
+    # Collection of tracked accounts
+    # Comma-separated: full profile URLs or "tiktok:@user" / "instagram:user"
+    source_accounts: str = ""
+    # How often the collector walks the accounts (0 disables the schedule)
+    source_scan_interval_hours: int = 24
+    # New posts taken per account per scan
+    source_max_items_per_account: int = 3
+    # Chat that receives scan digests; also the only chat allowed to run /scan
+    admin_chat_id: Optional[int] = None
+
     # System
     workdir: Path = Path("./data")
+    # SQLite file with collected posts (put it on a volume to survive redeploys)
+    database_path: Optional[Path] = None
     log_level: str = "INFO"
     # Remove leftover media from previous runs on startup (ephemeral hosts)
     clean_workdir_on_start: bool = True
@@ -129,6 +141,9 @@ class Settings(BaseSettings):
         # Ensure workdir exists
         self.workdir.mkdir(parents=True, exist_ok=True)
 
+        if self.database_path is None:
+            self.database_path = self.workdir / "collected.db"
+
         self._webhook_base_url_explicit = bool(self.webhook_base_url)
 
         # Derive the webhook base URL from the platform-provided domain
@@ -140,6 +155,11 @@ class Settings(BaseSettings):
 
         if self.webhook_path and not self.webhook_path.startswith("/"):
             self.webhook_path = f"/{self.webhook_path}"
+
+    @property
+    def accounts(self) -> list[str]:
+        """Tracked account specs, as written in SOURCE_ACCOUNTS."""
+        return [a.strip() for a in self.source_accounts.split(",") if a.strip()]
 
     @property
     def fallback_models(self) -> list[str]:
