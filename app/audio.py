@@ -34,6 +34,10 @@ class FFmpegNotAvailable(RuntimeError):
     """Raised when FFmpeg is required but not installed."""
 
 
+class NoAudioStream(RuntimeError):
+    """Raised when a media file carries no audio track at all."""
+
+
 def ffmpeg_path() -> Optional[str]:
     """Return the ffmpeg executable path, or None if it is not installed."""
     return shutil.which("ffmpeg")
@@ -85,6 +89,33 @@ def probe_duration(path: Path) -> Optional[float]:
         return None
 
 
+def has_audio_stream(path: Path) -> Optional[bool]:
+    """Whether the file contains an audio track (None if ffprobe is missing)."""
+    probe = ffprobe_path()
+    if not probe or not path.exists():
+        return None
+
+    try:
+        result = subprocess.run(
+            [
+                probe, "-v", "error",
+                "-select_streams", "a",
+                "-show_entries", "stream=codec_type",
+                "-of", "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=True,
+        )
+        streams = json.loads(result.stdout).get("streams", [])
+        return len(streams) > 0
+    except Exception as e:
+        logger.warning(f"ffprobe не смог проверить аудиодорожку {path.name}: {e}")
+        return None
+
+
 def extract_audio(source: Path, target: Optional[Path] = None) -> Path:
     """Transcode any media file into a compact mono MP3 suitable for STT.
 
@@ -92,6 +123,9 @@ def extract_audio(source: Path, target: Optional[Path] = None) -> Path:
     an hour of speech fits well under the upload limit at the default bitrate.
     """
     ffmpeg = require_ffmpeg()
+
+    if has_audio_stream(source) is False:
+        raise NoAudioStream(f"В файле {source.name} нет аудиодорожки")
 
     if target is None:
         target = source.with_name(f"{source.stem}_audio.mp3")
@@ -171,6 +205,9 @@ def prepare_for_stt(source: Path) -> List[AudioChunk]:
     if size_mb <= limit_mb and suffix in SUPPORTED_UPLOAD_EXTENSIONS and suffix != ".mp4":
         logger.info(f"Using {source.name} as-is ({size_mb:.1f} MB)")
         return [AudioChunk(path=source, offset=0.0)]
+
+    if has_audio_stream(source) is False:
+        raise NoAudioStream(f"В файле {source.name} нет аудиодорожки")
 
     if not ffmpeg_path():
         if size_mb <= limit_mb and suffix in SUPPORTED_UPLOAD_EXTENSIONS:

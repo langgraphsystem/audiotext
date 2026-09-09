@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from .config import settings
 from .utils import safe_filename, get_video_info, base_ydl_opts, detect_platform
-from .audio import extract_audio, ffmpeg_path
+from .audio import NoAudioStream, extract_audio, ffmpeg_path, has_audio_stream
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -279,11 +279,13 @@ class YtDlpClient:
                 logger.error("Download produced no media file")
                 return None
 
-            if has_ffmpeg:
+            if has_ffmpeg and has_audio_stream(downloaded) is not False:
                 try:
                     audio_path = extract_audio(downloaded)
                     downloaded.unlink(missing_ok=True)
                     return audio_path
+                except NoAudioStream as e:
+                    logger.info(f"{e} — расшифровывать нечего")
                 except Exception as e:
                     logger.warning(f"Local audio extraction failed: {e}")
 

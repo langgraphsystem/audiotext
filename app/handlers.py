@@ -327,6 +327,8 @@ async def handle_video_url(message: Message, state: FSMContext):
                 else:
                     await status.set("🎤 Расшифровываю аудио...")
 
+            # A failure here is not fatal: frames and publication data still
+            # carry the clip, and many reels have no speech at all.
             try:
                 text_content, segments, audio_temp_files = await processor.extract_audio_transcript(
                     url, progress=progress
@@ -336,12 +338,11 @@ async def handle_video_url(message: Message, state: FSMContext):
                 if not text_content:
                     logger.info("Речь не распознана — продолжаю с визуальным разбором")
             except ValueError as e:
-                await status.set(f"❌ {e}")
-                return
+                logger.warning(f"Аудио пропущено: {e}")
+                await status.set(f"⚠️ {e}\nПродолжаю по кадрам...")
             except Exception as e:
-                logger.error(f"Error processing audio: {e}")
-                await status.set(f"❌ Ошибка при обработке аудио: {e}")
-                return
+                logger.warning(f"Расшифровка не удалась, продолжаю по кадрам: {e}")
+                await status.set("⚠️ Речь получить не удалось. Разбираю по кадрам...")
 
         for file in temp_files:
             if file.suffix == '.txt':
@@ -359,7 +360,7 @@ async def handle_video_url(message: Message, state: FSMContext):
         if not has_text and not images:
             await status.set(
                 "❌ Не удалось извлечь ни речь, ни кадры из видео. "
-                "Проверьте, что запись доступна."
+                "Проверьте, что запись публичная и доступна."
             )
             return
 

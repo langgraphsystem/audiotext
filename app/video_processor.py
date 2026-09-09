@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 
+from .audio import NoAudioStream
 from .config import settings
 from .logger import get_logger
 from .openai_client import OpenAIClient
@@ -69,7 +70,11 @@ class VideoProcessor:
                 f"Файл слишком большой. Максимальный размер: {settings.max_file_size_mb} МБ."
             )
 
-        transcript = await self.stt_engine.transcribe(audio_path, progress=progress)
+        try:
+            transcript = await self.stt_engine.transcribe(audio_path, progress=progress)
+        except NoAudioStream as e:
+            logger.info(f"{e}: разбор пойдёт без расшифровки")
+            return None, None, temp_files
         text_content = transcript.text
         segments = transcript.segments
 
