@@ -17,6 +17,9 @@ from .logger import get_logger
 
 logger = get_logger(__name__)
 
+# A failing post is retried on later scans, but not forever
+MAX_ATTEMPTS = 3
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS posts (
     url           TEXT PRIMARY KEY,
@@ -38,6 +41,7 @@ CREATE TABLE IF NOT EXISTS posts (
     frames        INTEGER DEFAULT 0,
     status        TEXT DEFAULT 'ok',
     error         TEXT,
+    attempts      INTEGER DEFAULT 1,
     processed_at  REAL
 );
 CREATE INDEX IF NOT EXISTS idx_posts_account ON posts(account);
@@ -68,15 +72,33 @@ class Storage:
         return row is not None
 
     def known_urls(self, urls: List[str]) -> set:
-        """Subset of the given URLs that is already stored."""
+        """URLs that should not be collected again.
+
+        A post that failed is retried on later scans — network hiccups are
+        common — but only up to MAX_ATTEMPTS, so a permanently broken video
+        stops costing API calls.
+        """
         if not urls:
             return set()
         placeholders = ",".join("?" for _ in urls)
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT url FROM posts WHERE url IN ({placeholders})", urls
+                f"""
+                SELECT url FROM posts
+                WHERE url IN ({placeholders})
+                  AND (status IN ('ok', 'empty') OR attempts >= ?)
+                """,
+                [*urls, MAX_ATTEMPTS],
             ).fetchall()
         return {r["url"] for r in rows}
+
+    def attempts_for(self, url: str) -> int:
+        """How many times this post was already tried."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT attempts FROM posts WHERE url = ?", (url,)
+            ).fetchone()
+        return row["attempts"] if row else 0
 
     def save_post(
         self,
@@ -93,6 +115,7 @@ class Storage:
         """Insert or replace a collected post."""
         metadata = metadata or {}
         tags = metadata.get("tags")
+        attempts = self.attempts_for(url) + 1
 
         with self._lock:
             self._conn.execute(
@@ -101,8 +124,8 @@ class Storage:
                     url, platform, account, video_id, title, description, uploader,
                     duration, view_count, like_count, comment_count, upload_date,
                     track, tags, transcript, analysis, frames, status, error,
-                    processed_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    attempts, processed_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     url,
@@ -124,6 +147,7 @@ class Storage:
                     frames,
                     status,
                     error,
+                    attempts,
                     time.time(),
                 ),
             )

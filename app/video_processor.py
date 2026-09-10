@@ -75,6 +75,10 @@ class VideoProcessor:
         except NoAudioStream as e:
             logger.info(f"{e}: разбор пойдёт без расшифровки")
             return None, None, temp_files
+        except Exception:
+            # Caller never receives temp_files when we raise, so clean up here
+            cleanup_temp_files(*temp_files)
+            raise
         text_content = transcript.text
         segments = transcript.segments
 
@@ -96,6 +100,7 @@ class VideoProcessor:
         Returns (data URLs for the model, temp files to clean up). Never
         raises: the visual pass is a bonus on top of the transcript.
         """
+        preview = None
         if not settings.vision_enabled or settings.vision_frames <= 0:
             return [], []
 
@@ -118,6 +123,8 @@ class VideoProcessor:
             return images, [preview, *frames]
         except Exception as e:
             logger.warning(f"Визуальный разбор пропущен: {e}")
+            if preview:
+                cleanup_temp_files(preview)
             return [], []
 
     async def analyze_content(
