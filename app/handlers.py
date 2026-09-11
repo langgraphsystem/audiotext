@@ -8,7 +8,7 @@ from aiogram import Router, F
 from aiogram.types import Message, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 from .config import settings
 from .utils import (
@@ -62,7 +62,9 @@ class StatusMessage:
                 self._sent = await self._message.answer(text)
             else:
                 await self._sent.edit_text(text)
-        except TelegramBadRequest as e:
+        except (TelegramAPIError, OSError) as e:
+            # Progress updates are cosmetic: a rate limit or a network blip
+            # must never abort the processing they are reporting on.
             logger.debug(f"Status update skipped: {e}")
 
 
@@ -150,6 +152,10 @@ def _is_admin(message: Message) -> bool:
 @router.message(F.text.startswith("/sources"))
 async def cmd_sources(message: Message):
     """Show tracked accounts and what has been collected so far."""
+    if not _is_admin(message):
+        await message.answer("⛔ Команда доступна только в админском чате.")
+        return
+
     accounts = tracked_accounts()
     stats = get_storage().stats()
 
@@ -214,6 +220,16 @@ async def cmd_scan(message: Message):
 @router.message(F.text.startswith("/digest"))
 async def cmd_digest(message: Message):
     """Send the collected material as one file."""
+    # The digest carries the whole collected database — keep it to the owner
+    if not _is_admin(message):
+        await message.answer("⛔ Команда доступна только в админском чате.")
+        return
+
+    allowed, error_msg = rate_limiter.is_allowed(message.from_user.id)
+    if not allowed:
+        await message.answer(f"⏱️ {error_msg}")
+        return
+
     parts = (message.text or "").split()
     limit = 20
     if len(parts) > 1 and parts[1].isdigit():
@@ -314,6 +330,9 @@ async def handle_video_url(message: Message, state: FSMContext):
             temp_files.extend(subtitle_temp_files)
             if text_content:
                 await status.set("✅ Субтитры найдены, готовлю текст...")
+                txt_path = next(
+                    (f for f in subtitle_temp_files if f.suffix == '.txt'), None
+                )
         except Exception as e:
             logger.error(f"Error extracting subtitles: {e}")
 
@@ -335,7 +354,11 @@ async def handle_video_url(message: Message, state: FSMContext):
                 )
                 temp_files.extend(audio_temp_files)
 
-                if not text_content:
+                if text_content:
+                    txt_path = next(
+                        (f for f in audio_temp_files if f.suffix == '.txt'), None
+                    )
+                else:
                     logger.info("Речь не распознана — продолжаю с визуальным разбором")
             except ValueError as e:
                 logger.warning(f"Аудио пропущено: {e}")
@@ -343,11 +366,6 @@ async def handle_video_url(message: Message, state: FSMContext):
             except Exception as e:
                 logger.warning(f"Расшифровка не удалась, продолжаю по кадрам: {e}")
                 await status.set("⚠️ Речь получить не удалось. Разбираю по кадрам...")
-
-        for file in temp_files:
-            if file.suffix == '.txt':
-                txt_path = file
-                break
 
         # Visual pass: key frames go to the model together with the transcript
         images = []

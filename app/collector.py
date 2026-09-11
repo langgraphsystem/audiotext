@@ -16,11 +16,26 @@ from .openai_client import OpenAIClient
 from .sources import Account, PostRef, list_recent_posts, tracked_accounts
 from .storage import get_storage
 from .stt_engine import STTEngine
-from .utils import cleanup_temp_files, collect_metadata, get_video_info
+from .utils import (
+    check_audio_duration,
+    cleanup_temp_files,
+    collect_metadata,
+    get_video_info,
+)
 from .video_processor import VideoProcessor
 from .yt_dlp_client import YtDlpClient
 
 logger = get_logger(__name__)
+
+# analyze_text reports failures as text instead of raising, so a stored
+# analysis starting with these markers means the model never answered.
+_ANALYSIS_FAILURE_MARKERS = ("❌", "Получен пустой ответ")
+
+
+def _analysis_failed(analysis: str) -> bool:
+    """Whether the analysis text is actually an error message."""
+    text = (analysis or "").strip()
+    return not text or text.startswith(_ANALYSIS_FAILURE_MARKERS)
 
 ProgressCallback = Optional[Callable[[str], Awaitable[None]]]
 
@@ -115,6 +130,18 @@ class Collector:
             info = await asyncio.to_thread(get_video_info, post.url)
             metadata = collect_metadata(info)
 
+            if info and not check_audio_duration(info):
+                minutes = (info.get('duration') or 0) / 60
+                logger.info(
+                    f"Пропускаю {post.url[-24:]}: {minutes:.1f} мин — длиннее лимита"
+                )
+                self.storage.save_post(
+                    url=post.url, platform=account.platform, account=account.handle,
+                    metadata=metadata, status="skipped",
+                    error=f"длительность {minutes:.1f} мин",
+                )
+                return False
+
             text_content = None
             segments = None
 
@@ -155,13 +182,22 @@ class Collector:
             if analysis_path:
                 temp_files.append(analysis_path)
 
+            if _analysis_failed(analysis):
+                logger.warning(f"Анализ не получен для {post.url[-24:]}: {analysis[:80]}")
+                self.storage.save_post(
+                    url=post.url, platform=account.platform, account=account.handle,
+                    metadata=metadata, transcript=(text_content or "").strip(),
+                    status="error", error=(analysis or "пустой ответ")[:500],
+                )
+                return False
+
             self.storage.save_post(
                 url=post.url,
                 platform=account.platform,
                 account=account.handle,
                 metadata=metadata,
                 transcript=(text_content or "").strip(),
-                analysis=(analysis or "").strip(),
+                analysis=analysis.strip(),
                 frames=len(images),
             )
             logger.info(f"Собрано: {account.label} | {post.url[-24:]}")

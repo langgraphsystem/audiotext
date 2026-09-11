@@ -269,6 +269,7 @@ def collect_metadata(info: Optional[dict]) -> dict:
         return {}
 
     fields = {
+        'id': info.get('id'),
         'title': info.get('title'),
         'description': info.get('description'),
         'uploader': info.get('uploader') or info.get('channel'),

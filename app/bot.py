@@ -206,6 +206,7 @@ async def webhook_main():
 
     log_startup_info()
     clean_workdir()
+    scan_task = start_collector(bot)
 
     app = web.Application()
 
@@ -216,6 +217,7 @@ async def webhook_main():
             "Webhook-режим требует WEBHOOK_BASE_URL (или RAILWAY_PUBLIC_DOMAIN). "
             "Запускаю polling."
         )
+        await stop_collector(scan_task)
         await bot.session.close()
         await main()
         return
@@ -250,6 +252,7 @@ async def webhook_main():
     except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
         logger.info("Webhook server stopped")
     finally:
+        await stop_collector(scan_task)
         await runner.cleanup()
         await close_stt_client()
         await bot.session.close()

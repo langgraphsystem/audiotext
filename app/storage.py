@@ -86,7 +86,7 @@ class Storage:
                 f"""
                 SELECT url FROM posts
                 WHERE url IN ({placeholders})
-                  AND (status IN ('ok', 'empty') OR attempts >= ?)
+                  AND (status IN ('ok', 'empty', 'skipped') OR attempts >= ?)
                 """,
                 [*urls, MAX_ATTEMPTS],
             ).fetchall()

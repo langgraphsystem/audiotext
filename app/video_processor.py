@@ -33,11 +33,17 @@ class VideoProcessor:
         subtitle_path = await asyncio.to_thread(self.yt_client.download_subtitles, url)
 
         if subtitle_path:
-            txt_path = await asyncio.to_thread(vtt_or_srt_to_txt, subtitle_path)
-            temp_files.extend([subtitle_path, txt_path])
+            temp_files.append(subtitle_path)
+            try:
+                txt_path = await asyncio.to_thread(vtt_or_srt_to_txt, subtitle_path)
+                temp_files.append(txt_path)
 
-            with open(txt_path, 'r', encoding='utf-8') as f:
-                text_content = f.read()
+                with open(txt_path, 'r', encoding='utf-8') as f:
+                    text_content = f.read()
+            except Exception as e:
+                # The subtitle file is already in temp_files, so it gets cleaned
+                logger.warning(f"Субтитры не удалось разобрать: {e}")
+                return None, temp_files
 
             if text_content.strip():
                 return text_content, temp_files
