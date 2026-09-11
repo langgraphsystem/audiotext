@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     vision_max_duration_minutes: int = 20
     vision_max_height: int = 480
 
+    # Composio (official Instagram Graph API for accounts you manage)
+    composio_api_key: Optional[str] = None
+    composio_base_url: str = "https://backend.composio.dev/api/v3"
+    composio_connected_account_id: Optional[str] = None
+    composio_user_id: Optional[str] = None
+    composio_ig_user_id: str = "me"
+    # Feed posts are usually reels; set false to also collect photo posts
+    composio_videos_only: bool = True
+
     # Collection of tracked accounts
     # Comma-separated: full profile URLs or "tiktok:@user" / "instagram:user"
     source_accounts: str = ""

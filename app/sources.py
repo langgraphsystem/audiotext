@@ -12,6 +12,7 @@ import yt_dlp
 
 from .config import settings
 from .logger import get_logger
+from .composio_source import fetch_instagram_media
 from .utils import base_ydl_opts, cookie_file_for, detect_platform, platform_title
 
 logger = get_logger(__name__)
@@ -28,10 +29,13 @@ class Account:
     platform: str
     handle: str
     url: str
+    # 'ytdlp' reads the public profile page, 'composio' the official API
+    via: str = 'ytdlp'
 
     @property
     def label(self) -> str:
-        return f"{platform_title(self.platform)} @{self.handle}"
+        suffix = " (Composio)" if self.via == 'composio' else ""
+        return f"{platform_title(self.platform)} @{self.handle}{suffix}"
 
 
 @dataclass
@@ -47,6 +51,10 @@ def parse_account(spec: str) -> Optional[Account]:
     spec = spec.strip()
     if not spec:
         return None
+
+    # Official API through Composio: "composio:instagram"
+    if re.match(r'^composio\s*:\s*instagram$', spec, re.IGNORECASE):
+        return Account('instagram', 'me', 'composio://instagram', via='composio')
 
     # Prefixed form
     match = re.match(r'^(tiktok|instagram)\s*:\s*@?([\w.\-]+)$', spec, re.IGNORECASE)
@@ -77,6 +85,33 @@ def tracked_accounts() -> List[Account]:
     return [a for a in accounts if a]
 
 
+def _list_via_composio(account: Account, limit: int) -> Optional[List[PostRef]]:
+    """Read the feed through the official Instagram API exposed by Composio."""
+    result = fetch_instagram_media(limit)
+    if result is None:
+        return None
+
+    items, username = result
+    account.handle = username
+
+    posts: List[PostRef] = []
+    for item in items[:limit]:
+        permalink = item.get('permalink')
+        if not permalink:
+            continue
+        if settings.composio_videos_only and item.get('media_type') != 'VIDEO':
+            continue
+        caption = (item.get('caption') or '').strip().replace('\n', ' ')
+        posts.append(PostRef(
+            url=permalink,
+            post_id=str(item.get('id') or ''),
+            title=caption[:80],
+        ))
+
+    logger.info(f"{account.label}: к обработке {len(posts)} публикаций")
+    return posts
+
+
 def list_recent_posts(
     account: Account, limit: Optional[int] = None
 ) -> Optional[List[PostRef]]:
@@ -86,6 +121,9 @@ def list_recent_posts(
     cookies for profile listings) — that is different from an empty feed.
     """
     limit = limit or settings.source_max_items_per_account
+
+    if account.via == 'composio':
+        return _list_via_composio(account, limit)
 
     opts = {
         **base_ydl_opts(account.url),

@@ -27,11 +27,19 @@ Telegram-бот, который принимает ссылку на **TikTok** 
 (речь + кадры + данные площадки) и складывает результат в SQLite.
 
 ```env
-SOURCE_ACCOUNTS=tiktok:@coffee.lab, instagram:barista
+SOURCE_ACCOUNTS=tiktok:@coffee.lab, composio:instagram
 SOURCE_SCAN_INTERVAL_HOURS=24
 SOURCE_MAX_ITEMS_PER_ACCOUNT=3
 ADMIN_CHAT_ID=123456789
 ```
+
+Виды источников:
+
+| Запись | Как читается лента |
+|--------|--------------------|
+| `tiktok:@user` | Публичная страница профиля через yt-dlp — работает без авторизации |
+| `composio:instagram` | Официальный Instagram Graph API через Composio — **рекомендуемый способ для Instagram** |
+| `instagram:user` | Публичная страница профиля; Instagram её анонимно не отдаёт, нужны cookies |
 
 Команды в боте:
 
@@ -59,7 +67,10 @@ ADMIN_CHAT_ID=123456789
 | Instagram | `https://www.instagram.com/reel/...`, `/p/...`, `/tv/...` |
 
 Отдельные ролики по прямой ссылке Instagram отдаёт без авторизации, а вот **ленту
-профиля — нет**: для сбора по аккаунтам нужны cookies. Экспортируйте их в формате
+профиля — нет**. Правильный способ собирать свой аккаунт — источник
+`composio:instagram`: он берёт список публикаций из официального Graph API
+(нужен `COMPOSIO_API_KEY`), а сами ролики качаются по полученным ссылкам.
+Обходной путь для чужого аккаунта — cookies. Экспортируйте их в формате
 Netscape и передайте через `INSTAGRAM_COOKIES_FILE` или, если файл примонтировать
 некуда, строкой в `INSTAGRAM_COOKIES_B64` (`base64 -w0 cookies.txt`).
 
@@ -187,6 +198,10 @@ INSTAGRAM_COOKIES_FILE=/app/cookies/instagram.txt   # если нужен зак
 | `MAX_AUDIO_DURATION_MINUTES` | `120` | Максимальная длительность ролика |
 | `INSTAGRAM_COOKIES_FILE` / `TIKTOK_COOKIES_FILE` | — | Cookies для закрытого контента |
 | `INSTAGRAM_COOKIES_B64` / `TIKTOK_COOKIES_B64` | — | Те же cookies строкой в base64 |
+| `COMPOSIO_API_KEY` | — | Ключ Composio для источника `composio:instagram` |
+| `COMPOSIO_CONNECTED_ACCOUNT_ID` | — | Если в Composio подключено несколько аккаунтов |
+| `COMPOSIO_IG_USER_ID` | `me` | Чей аккаунт читать: `me` или числовой ID |
+| `COMPOSIO_VIDEOS_ONLY` | `true` | Собирать только видео, пропуская фото-публикации |
 | `SOURCE_ACCOUNTS` | — | Отслеживаемые аккаунты через запятую |
 | `SOURCE_SCAN_INTERVAL_HOURS` | `24` | Периодичность обхода; `0` отключает |
 | `SOURCE_MAX_ITEMS_PER_ACCOUNT` | `3` | Сколько новых публикаций брать за проход |
@@ -242,6 +257,7 @@ app/
 ├── audio.py           # FFmpeg: перекодирование, длительность, нарезка
 ├── vision.py          # FFmpeg: ключевые кадры для визуального разбора
 ├── sources.py         # разбор списка аккаунтов и лент профилей
+├── composio_source.py # лента Instagram через официальный API (Composio)
 ├── collector.py       # плановый обход аккаунтов и сбор новых публикаций
 ├── storage.py         # SQLite: собранные публикации и дедупликация
 ├── export.py          # выгрузка материала файлом для приложения Claude
