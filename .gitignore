@@ -11,6 +11,7 @@ venv/
 # Project
 .env
 data/
+cookies/
 *.mp3
 *.m4a
 *.mp4

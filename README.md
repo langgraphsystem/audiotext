@@ -83,22 +83,35 @@ Netscape и передайте через `INSTAGRAM_COOKIES_FILE` или, ес�
 Зависимости Python перечислены в `requirements.txt`:
 `aiogram`, `yt-dlp`, `openai`, `pydantic`, `pydantic-settings`, `httpx`, `aiohttp`, `uvloop` (Linux).
 
-## 🛠️ Быстрый старт
+## 🛠️ Локальный запуск
 
 ```bash
-# 1. Зависимости
-pip install -r requirements.txt
-
-# 2. Конфигурация
-cp env.example .env
-# заполните BOT_TOKEN и OPENAI_API_KEY
-
-# 3. Проверка окружения
-python test_setup.py
-
-# 4. Запуск
-python -m app.bot
+git clone https://github.com/langgraphsystem/audiotext.git
+cd audiotext
+make setup     # .venv + зависимости + .env из шаблона
+# заполните BOT_TOKEN и OPENAI_API_KEY в .env
+make test      # проверка зависимостей, FFmpeg и распознавания ссылок
+make run       # запуск
 ```
+
+Или в Docker, если не хочется ставить FFmpeg:
+
+```bash
+make env       # .env из шаблона, заполните ключи
+make docker-up # сборка и запуск; данные останутся в ./data
+```
+
+**Важно:** Telegram допускает только одного потребителя `getUpdates` на токен.
+Если бот уже крутится на сервере, локальный запуск будет выбивать его
+(`TelegramConflictError`) — остановите сервис или заведите отдельного тестового
+бота у @BotFather.
+
+**Локально Instagram работает лучше:** yt-dlp может брать cookies прямо из
+браузера (`COOKIES_FROM_BROWSER=chrome`), а домашний IP не режется так, как
+датацентровый. На сервере такой возможности нет — там только
+`INSTAGRAM_COOKIES_B64` или официальный API через Composio.
+
+Подробности — в [QUICKSTART.md](QUICKSTART.md).
 
 Режим webhook (для сервера):
 
@@ -202,6 +215,7 @@ INSTAGRAM_COOKIES_FILE=/app/cookies/instagram.txt   # если нужен зак
 | `COMPOSIO_CONNECTED_ACCOUNT_ID` | — | Если в Composio подключено несколько аккаунтов |
 | `COMPOSIO_IG_USER_ID` | `me` | Чей аккаунт читать: `me` или числовой ID |
 | `COMPOSIO_VIDEOS_ONLY` | `true` | Собирать только видео, пропуская фото-публикации |
+| `COOKIES_FROM_BROWSER` | — | Брать cookies из браузера: `chrome`, `firefox`, `edge`… (только локально) |
 | `SOURCE_ACCOUNTS` | — | Отслеживаемые аккаунты через запятую |
 | `SOURCE_SCAN_INTERVAL_HOURS` | `24` | Периодичность обхода; `0` отключает |
 | `SOURCE_MAX_ITEMS_PER_ACCOUNT` | `3` | Сколько новых публикаций брать за проход |

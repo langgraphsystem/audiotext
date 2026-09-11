@@ -298,6 +298,11 @@ def base_ydl_opts(url: str) -> dict:
     cookies_path = cookie_file_for(platform)
     if cookies_path:
         opts['cookiefile'] = str(cookies_path)
+    elif settings.cookies_from_browser:
+        # Local runs can borrow the browser session directly
+        browser = settings.cookies_from_browser.strip().lower()
+        opts['cookiesfrombrowser'] = (browser,)
+        logger.info(f"Беру cookies из браузера: {browser}")
 
     return opts
 

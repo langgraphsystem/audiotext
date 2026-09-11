@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     # Same cookies as a base64 string, for hosts where a file cannot be mounted
     instagram_cookies_b64: Optional[str] = None
     tiktok_cookies_b64: Optional[str] = None
+    # Read cookies straight from a local browser profile: chrome, firefox,
+    # edge, brave, opera, safari, chromium, vivaldi. Local runs only —
+    # a server has no browser profile to read.
+    cookies_from_browser: Optional[str] = None
 
     # Rate limiting
     max_requests_per_minute: int = 5

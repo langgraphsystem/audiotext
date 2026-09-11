@@ -129,7 +129,7 @@ def main():
         print(f"🎉 Все проверки пройдены. {BRAND} готов к запуску.")
         print("\nДальше:")
         print("1. Заполните .env (BOT_TOKEN, OPENAI_API_KEY)")
-        print("2. Запустите: python -m app.bot")
+        print("2. Запустите: make run  (или python -m app.bot)")
         return True
 
     print("❌ Часть проверок не пройдена.")

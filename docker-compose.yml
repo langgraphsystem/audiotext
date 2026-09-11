@@ -1,0 +1,12 @@
+# Локальный запуск: docker compose up --build
+# FFmpeg уже внутри образа, база и временные файлы лежат в ./data
+services:
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      WORKDIR: /app/data
+      DATABASE_PATH: /app/data/collected.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
