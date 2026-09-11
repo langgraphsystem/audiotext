@@ -1,6 +1,7 @@
 """
 Utility functions for file operations, subtitle conversion, and text sanitization.
 """
+import base64
 import re
 import unicodedata
 from pathlib import Path
@@ -226,6 +227,56 @@ USER_AGENT = (
 )
 
 
+def _cookie_file_from_b64(platform: str, encoded: str) -> Optional[Path]:
+    """Write a base64-encoded cookies file to disk once and return its path.
+
+    Kept in a subdirectory: clean_workdir() wipes *.txt at the root.
+    """
+    target = settings.workdir / "cookies" / f"{platform}.txt"
+    if target.exists() and target.stat().st_size > 0:
+        return target
+
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except Exception as e:
+        logger.error(f"Не удалось раскодировать cookies для {platform}: {e}")
+        return None
+
+    if not data.strip():
+        return None
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        target.chmod(0o600)
+        logger.info(f"Cookies для {platform} записаны из переменной окружения")
+        return target
+    except OSError as e:
+        logger.error(f"Не удалось сохранить cookies для {platform}: {e}")
+        return None
+
+
+def cookie_file_for(platform: Optional[str]) -> Optional[Path]:
+    """Cookies path for a platform: explicit file first, then the base64 form."""
+    if platform == 'instagram':
+        path, encoded = settings.instagram_cookies_file, settings.instagram_cookies_b64
+    elif platform == 'tiktok':
+        path, encoded = settings.tiktok_cookies_file, settings.tiktok_cookies_b64
+    else:
+        return None
+
+    if path:
+        cookies_path = Path(path)
+        if cookies_path.exists():
+            return cookies_path
+        logger.warning(f"Cookies file not found: {cookies_path}")
+
+    if encoded:
+        return _cookie_file_from_b64(platform, encoded)
+
+    return None
+
+
 def base_ydl_opts(url: str) -> dict:
     """Common yt-dlp options, including per-platform cookies when configured."""
     opts = {
@@ -240,21 +291,13 @@ def base_ydl_opts(url: str) -> dict:
     }
 
     platform = detect_platform(url)
-    cookies = None
     if platform == 'instagram':
-        cookies = settings.instagram_cookies_file
         # Instagram serves the page differently to a plain UA
         opts['http_headers']['Referer'] = 'https://www.instagram.com/'
-    elif platform == 'tiktok':
-        cookies = settings.tiktok_cookies_file
 
-    if cookies:
-        cookies_path = Path(cookies)
-        if cookies_path.exists():
-            opts['cookiefile'] = str(cookies_path)
-            logger.info(f"Using cookies file for {platform}: {cookies_path.name}")
-        else:
-            logger.warning(f"Cookies file not found: {cookies_path}")
+    cookies_path = cookie_file_for(platform)
+    if cookies_path:
+        opts['cookiefile'] = str(cookies_path)
 
     return opts
 

@@ -58,8 +58,10 @@ ADMIN_CHAT_ID=123456789
 | TikTok | `https://www.tiktok.com/@user/video/...`, `https://vt.tiktok.com/...`, `https://vm.tiktok.com/...` |
 | Instagram | `https://www.instagram.com/reel/...`, `/p/...`, `/tv/...` |
 
-Для закрытых аккаунтов и возрастного контента Instagram укажите файл cookies
-(`INSTAGRAM_COOKIES_FILE`) в формате Netscape.
+Отдельные ролики по прямой ссылке Instagram отдаёт без авторизации, а вот **ленту
+профиля — нет**: для сбора по аккаунтам нужны cookies. Экспортируйте их в формате
+Netscape и передайте через `INSTAGRAM_COOKIES_FILE` или, если файл примонтировать
+некуда, строкой в `INSTAGRAM_COOKIES_B64` (`base64 -w0 cookies.txt`).
 
 ## 📋 Требования
 
@@ -184,6 +186,7 @@ INSTAGRAM_COOKIES_FILE=/app/cookies/instagram.txt   # если нужен зак
 | `MAX_FILE_SIZE_MB` | `500` | Предохранитель на размер скачанного файла |
 | `MAX_AUDIO_DURATION_MINUTES` | `120` | Максимальная длительность ролика |
 | `INSTAGRAM_COOKIES_FILE` / `TIKTOK_COOKIES_FILE` | — | Cookies для закрытого контента |
+| `INSTAGRAM_COOKIES_B64` / `TIKTOK_COOKIES_B64` | — | Те же cookies строкой в base64 |
 | `SOURCE_ACCOUNTS` | — | Отслеживаемые аккаунты через запятую |
 | `SOURCE_SCAN_INTERVAL_HOURS` | `24` | Периодичность обхода; `0` отключает |
 | `SOURCE_MAX_ITEMS_PER_ACCOUNT` | `3` | Сколько новых публикаций брать за проход |

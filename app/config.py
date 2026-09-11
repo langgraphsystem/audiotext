@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     # Cookies for age/login restricted content (Instagram in particular)
     instagram_cookies_file: Optional[Path] = None
     tiktok_cookies_file: Optional[Path] = None
+    # Same cookies as a base64 string, for hosts where a file cannot be mounted
+    instagram_cookies_b64: Optional[str] = None
+    tiktok_cookies_b64: Optional[str] = None
 
     # Rate limiting
     max_requests_per_minute: int = 5

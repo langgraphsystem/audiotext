@@ -44,6 +44,7 @@ ProgressCallback = Optional[Callable[[str], Awaitable[None]]]
 class ScanResult:
     """What one pass over the tracked accounts produced."""
     accounts: int = 0
+    unreachable_accounts: List[str] = field(default_factory=list)
     seen: int = 0
     collected: int = 0
     skipped: int = 0
@@ -62,6 +63,10 @@ class ScanResult:
             f"Собрано новых: {self.collected}",
             f"Уже было: {self.skipped}",
         ]
+        if self.unreachable_accounts:
+            lines.append(
+                "⚠️ Лента недоступна: " + ", ".join(self.unreachable_accounts)
+            )
         if self.failed:
             lines.append(f"Не удалось: {self.failed}")
         lines.append(f"Заняло: {self.duration / 60:.1f} мин")
@@ -94,6 +99,9 @@ class Collector:
                     await progress(f"🔍 {account.label}")
 
                 posts = await asyncio.to_thread(list_recent_posts, account)
+                if posts is None:
+                    result.unreachable_accounts.append(account.label)
+                    continue
                 result.seen += len(posts)
 
                 known = self.storage.known_urls([p.url for p in posts])
@@ -227,7 +235,7 @@ async def scheduled_scans(notify: ProgressCallback = None) -> None:
     while True:
         try:
             result = await collector.scan()
-            if notify and result.collected:
+            if notify and (result.collected or result.unreachable_accounts):
                 await notify(f"🗂 Плановый сбор\n\n{result.summary()}")
         except asyncio.CancelledError:
             logger.info("Плановый сбор остановлен")

@@ -12,7 +12,7 @@ import yt_dlp
 
 from .config import settings
 from .logger import get_logger
-from .utils import base_ydl_opts, detect_platform, platform_title
+from .utils import base_ydl_opts, cookie_file_for, detect_platform, platform_title
 
 logger = get_logger(__name__)
 
@@ -77,8 +77,14 @@ def tracked_accounts() -> List[Account]:
     return [a for a in accounts if a]
 
 
-def list_recent_posts(account: Account, limit: Optional[int] = None) -> List[PostRef]:
-    """List the account's most recent posts without downloading them."""
+def list_recent_posts(
+    account: Account, limit: Optional[int] = None
+) -> Optional[List[PostRef]]:
+    """List the account's most recent posts without downloading them.
+
+    Returns None when the feed could not be read at all (Instagram needs
+    cookies for profile listings) — that is different from an empty feed.
+    """
     limit = limit or settings.source_max_items_per_account
 
     opts = {
@@ -93,7 +99,13 @@ def list_recent_posts(account: Account, limit: Optional[int] = None) -> List[Pos
             info = ydl.extract_info(account.url, download=False)
     except Exception as e:
         logger.error(f"Не удалось получить ленту {account.label}: {e}")
-        return []
+        if account.platform == 'instagram' and not cookie_file_for('instagram'):
+            logger.error(
+                "Instagram не отдаёт ленту профиля без авторизации. Экспортируйте "
+                "cookies в формате Netscape и передайте их через "
+                "INSTAGRAM_COOKIES_B64 или INSTAGRAM_COOKIES_FILE."
+            )
+        return None
 
     entries = (info or {}).get('entries') or []
     posts: List[PostRef] = []
