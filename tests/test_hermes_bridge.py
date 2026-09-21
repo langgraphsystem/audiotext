@@ -1,5 +1,6 @@
 """Offline contract tests: no Telegram, video, or paid API calls."""
 
+import asyncio
 import os
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -74,13 +75,48 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(invalid.status, 400)
             first = await self.client.post("/v1/hermes/process", headers=self.headers, json=payload)
-            self.assertEqual(first.status, 200)
+            self.assertEqual(first.status, 202)
             self.assertEqual((await first.json())["request_id"], self.request_id)
+            await asyncio.sleep(0)
             duplicate = await self.client.post("/v1/hermes/process", headers=self.headers, json=payload)
             self.assertEqual(duplicate.status, 200)
+            result = await self.client.get(
+                f"/v1/hermes/jobs/{self.request_id}", headers=self.headers,
+            )
+            self.assertEqual(result.status, 200)
+            self.assertEqual((await result.json())["result"], fake_result)
             process.assert_awaited_once_with(self.url)
             conflict = await self.client.post(
                 "/v1/hermes/process", headers=self.headers,
                 json={"url": "https://www.instagram.com/p/XYZ/", "request_id": self.request_id},
             )
             self.assertEqual(conflict.status, 409)
+
+    async def test_only_one_paid_job_runs_and_job_read_requires_auth(self):
+        gate = asyncio.Event()
+
+        async def held_process(_url):
+            await gate.wait()
+            return {"analysis": "finished"}
+
+        payload = {"url": self.url, "request_id": self.request_id}
+        with patch.object(hermes_bridge, "process_video", side_effect=held_process) as process:
+            first = await self.client.post("/v1/hermes/process", headers=self.headers, json=payload)
+            self.assertEqual(first.status, 202)
+            duplicate = await self.client.post("/v1/hermes/process", headers=self.headers, json=payload)
+            self.assertEqual(duplicate.status, 202)
+            other = await self.client.post(
+                "/v1/hermes/process", headers=self.headers,
+                json={"url": "https://www.instagram.com/p/XYZ/",
+                      "request_id": "72743464-cbbe-4b6b-8797-a1e8644d23cf"},
+            )
+            self.assertEqual(other.status, 429)
+            unauthorized = await self.client.get(f"/v1/hermes/jobs/{self.request_id}")
+            self.assertEqual(unauthorized.status, 401)
+            gate.set()
+            await asyncio.sleep(0)
+            completed = await self.client.get(
+                f"/v1/hermes/jobs/{self.request_id}", headers=self.headers,
+            )
+            self.assertEqual((await completed.json())["state"], "completed")
+            self.assertEqual(process.call_count, 1)

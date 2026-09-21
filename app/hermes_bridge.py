@@ -19,8 +19,8 @@ from .logger import get_logger
 
 logger = get_logger(__name__)
 TOKEN_KEY = web.AppKey("bridge_token", str)
-CACHE_KEY = web.AppKey("bridge_cache", dict)
-LOCK_KEY = web.AppKey("bridge_lock", asyncio.Lock)
+JOBS_KEY = web.AppKey("bridge_jobs", dict)
+ACTIVE_KEY = web.AppKey("bridge_active", list)
 
 _INSTAGRAM_PATH = re.compile(r"^/(?:reel|p|tv)/[A-Za-z0-9_-]+/?$")
 _TIKTOK_PATH = re.compile(r"^/@[A-Za-z0-9_.-]+/video/[0-9]+/?$")
@@ -137,6 +137,32 @@ async def _status(request: web.Request) -> web.Response:
     }, headers={"Cache-Control": "no-store"})
 
 
+def _job_response(request_id: str, job: dict) -> web.Response:
+    body = {"request_id": request_id, "state": job["state"]}
+    if job["state"] == "completed":
+        body["result"] = job["result"]
+    elif job["state"] == "failed":
+        body["error"] = job["error"]
+    return web.json_response(body, status=202 if job["state"] == "running" else 200,
+                             headers={"Cache-Control": "no-store"})
+
+
+async def _run_job(app: web.Application, request_id: str, url: str) -> None:
+    job = app[JOBS_KEY][request_id]
+    try:
+        job["result"] = await process_video(url)
+        job["state"] = "completed"
+    except ValueError as exc:
+        job["error"] = str(exc)
+        job["state"] = "failed"
+    except Exception:
+        logger.exception("Hermes bridge processing failed")
+        job["error"] = "Processing failed; do not retry blindly"
+        job["state"] = "failed"
+    finally:
+        app[ACTIVE_KEY][0] = None
+
+
 async def _process(request: web.Request) -> web.Response:
     if not _authorized(request):
         raise web.HTTPUnauthorized(headers={"Cache-Control": "no-store"})
@@ -151,35 +177,35 @@ async def _process(request: web.Request) -> web.Response:
     except (ValueError, TypeError, AttributeError):
         raise web.HTTPBadRequest(text="UUID request_id required")
     url = payload["url"]
-    cache = request.app[CACHE_KEY]
-    if request_id in cache:
-        previous_url, result = cache[request_id]
-        if previous_url != url:
+    jobs = request.app[JOBS_KEY]
+    if request_id in jobs:
+        if jobs[request_id]["url"] != url:
             raise web.HTTPConflict(text="request_id already used for another URL")
-        return web.json_response(result, headers={"Cache-Control": "no-store"})
+        return _job_response(request_id, jobs[request_id])
 
-    lock = request.app[LOCK_KEY]
-    if lock.locked():
+    if request.app[ACTIVE_KEY][0] is not None:
         raise web.HTTPTooManyRequests(text="Processing already in progress")
-    async with lock:
-        # A concurrent duplicate may have completed while this call waited.
-        if request_id in cache:
-            previous_url, result = cache[request_id]
-            if previous_url != url:
-                raise web.HTTPConflict(text="request_id already used for another URL")
-            return web.json_response(result, headers={"Cache-Control": "no-store"})
-        try:
-            result = await process_video(url)
-        except ValueError as exc:
-            raise web.HTTPUnprocessableEntity(text=str(exc))
-        except Exception:
-            logger.exception("Hermes bridge processing failed")
-            raise web.HTTPServiceUnavailable(text="Processing failed; do not retry blindly")
-        result = {"request_id": request_id, **result}
-        if len(cache) >= 128:
-            cache.pop(next(iter(cache)))
-        cache[request_id] = (url, result)
-        return web.json_response(result, headers={"Cache-Control": "no-store"})
+    if len(jobs) >= 128:
+        finished = next((key for key, job in jobs.items() if job["state"] != "running"), None)
+        if finished is None:
+            raise web.HTTPTooManyRequests(text="Bridge job capacity reached")
+        jobs.pop(finished)
+    jobs[request_id] = {"url": url, "state": "running"}
+    request.app[ACTIVE_KEY][0] = asyncio.create_task(_run_job(request.app, request_id, url))
+    return _job_response(request_id, jobs[request_id])
+
+
+async def _get_job(request: web.Request) -> web.Response:
+    if not _authorized(request):
+        raise web.HTTPUnauthorized(headers={"Cache-Control": "no-store"})
+    try:
+        request_id = str(uuid.UUID(request.match_info["request_id"]))
+    except ValueError:
+        raise web.HTTPBadRequest(text="UUID request_id required")
+    job = request.app[JOBS_KEY].get(request_id)
+    if job is None:
+        raise web.HTTPNotFound(text="Job not found; do not resubmit blindly")
+    return _job_response(request_id, job)
 
 
 def register_bridge_routes(app: web.Application) -> bool:
@@ -190,10 +216,11 @@ def register_bridge_routes(app: web.Application) -> bool:
     if len(token) < 32:
         return False
     app[TOKEN_KEY] = token
-    app[CACHE_KEY] = {}
-    app[LOCK_KEY] = asyncio.Lock()
+    app[JOBS_KEY] = {}
+    app[ACTIVE_KEY] = [None]
     app.router.add_get("/v1/hermes/status", _status)
     app.router.add_post("/v1/hermes/process", _process)
+    app.router.add_get("/v1/hermes/jobs/{request_id}", _get_job)
     logger.info("Hermes bridge routes enabled")
     return True
 
