@@ -21,6 +21,7 @@ from aiohttp import web
 
 from .audio import ffmpeg_path
 from .collector import scheduled_scans
+from .hermes_bridge import register_bridge_routes, start_polling_bridge
 from .config import settings
 from .sources import tracked_accounts
 from .handlers import router
@@ -173,6 +174,7 @@ async def main():
     clean_workdir()
 
     scan_task = start_collector(bot)
+    bridge_runner = await start_polling_bridge()
 
     try:
         await bot.set_my_commands(BOT_COMMANDS)
@@ -192,6 +194,8 @@ async def main():
         logger.error(f"Bot error: {e}")
     finally:
         await stop_collector(scan_task)
+        if bridge_runner:
+            await bridge_runner.cleanup()
         await close_stt_client()
         await bot.session.close()
         logger.info("Bot shutdown complete")
@@ -208,7 +212,8 @@ async def webhook_main():
     clean_workdir()
     scan_task = start_collector(bot)
 
-    app = web.Application()
+    app = web.Application(client_max_size=4096)
+    register_bridge_routes(app)
 
     webhook_path = settings.webhook_path
     webhook_url = settings.webhook_url
