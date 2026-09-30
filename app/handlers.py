@@ -21,6 +21,7 @@ from .utils import (
     get_video_info,
     platform_title,
 )
+from .photo_posts import looks_like_photo_post
 from .yt_dlp_client import YtDlpClient
 from .stt_engine import STTEngine
 from .openai_client import OpenAIClient
@@ -287,12 +288,12 @@ async def handle_video_url(message: Message, state: FSMContext):
     await state.set_state(ProcessingStates.processing)
 
     try:
-        await status.set(f"🔄 Обрабатываю видео из {source}...")
+        await status.set(f"🔄 Обрабатываю публикацию из {source}...")
 
         video_info = await asyncio.to_thread(get_video_info, url)
         if video_info is None:
             await status.set(
-                f"❌ Не удалось получить данные видео из {source}. "
+                f"❌ Не удалось получить данные публикации из {source}. "
                 "Проверьте, что ссылка верная и запись публичная."
             )
             return
@@ -309,6 +310,12 @@ async def handle_video_url(message: Message, state: FSMContext):
         if metadata:
             logger.info(f"Метаданные публикации: {', '.join(metadata.keys())}")
 
+        # A photo post carries slides instead of a video track
+        is_photo = looks_like_photo_post(url, video_info)
+        visual_kind = "слайды" if is_photo else "кадры"
+        if is_photo:
+            logger.info("Публикация без видео: разбираю слайды")
+
         try:
             yt_client = YtDlpClient()
             stt_engine = STTEngine()
@@ -323,21 +330,25 @@ async def handle_video_url(message: Message, state: FSMContext):
         segments = None
         txt_path = None
 
-        # Step 1: try subtitles
-        await status.set("📝 Проверяю субтитры...")
-        try:
-            text_content, subtitle_temp_files = await processor.extract_subtitles(url)
-            temp_files.extend(subtitle_temp_files)
-            if text_content:
-                await status.set("✅ Субтитры найдены, готовлю текст...")
-                txt_path = next(
-                    (f for f in subtitle_temp_files if f.suffix == '.txt'), None
-                )
-        except Exception as e:
-            logger.error(f"Error extracting subtitles: {e}")
+        # Step 1: try subtitles. A photo post never has them: there is no video
+        # track to caption.
+        if not is_photo:
+            await status.set("📝 Проверяю субтитры...")
+            try:
+                text_content, subtitle_temp_files = await processor.extract_subtitles(url)
+                temp_files.extend(subtitle_temp_files)
+                if text_content:
+                    await status.set("✅ Субтитры найдены, готовлю текст...")
+                    txt_path = next(
+                        (f for f in subtitle_temp_files if f.suffix == '.txt'), None
+                    )
+            except Exception as e:
+                logger.error(f"Error extracting subtitles: {e}")
 
-        # Step 2: audio + transcription
-        if not text_content:
+        # Step 2: audio + transcription. An Instagram photo carousel carries no
+        # audio at all, while a TikTok slideshow may have a voiceover.
+        skip_audio = is_photo and platform != 'tiktok'
+        if not text_content and not skip_audio:
             await status.set("🎵 Субтитров нет. Скачиваю аудиодорожку...")
 
             async def progress(index: int, total: int) -> None:
@@ -370,14 +381,18 @@ async def handle_video_url(message: Message, state: FSMContext):
         # Visual pass: key frames go to the model together with the transcript
         images = []
         if settings.vision_enabled:
-            await status.set("🖼 Разбираю кадры видео...")
+            await status.set(
+                "🖼 Разбираю слайды публикации..." if is_photo
+                else "🖼 Разбираю кадры видео..."
+            )
             images, visual_temp_files = await processor.collect_visual_context(url, video_info)
             temp_files.extend(visual_temp_files)
 
         has_text = bool(text_content and len(text_content.strip()) >= 10)
         if not has_text and not images:
+            missing = "ни речь, ни слайды" if is_photo else "ни речь, ни кадры"
             await status.set(
-                "❌ Не удалось извлечь ни речь, ни кадры из видео. "
+                f"❌ Не удалось извлечь {missing} из публикации. "
                 "Проверьте, что запись публичная и доступна."
             )
             return
@@ -402,6 +417,7 @@ async def handle_video_url(message: Message, state: FSMContext):
                 platform=platform,
                 metadata=metadata,
                 images=images,
+                visual_kind=visual_kind,
             )
             if analysis_path:
                 temp_files.append(analysis_path)

@@ -7,7 +7,13 @@ from typing import List, Optional
 from dataclasses import dataclass
 
 from .config import settings
-from .utils import safe_filename, get_video_info, base_ydl_opts, detect_platform
+from .utils import (
+    base_ydl_opts,
+    detect_platform,
+    get_video_info,
+    safe_filename,
+    ydlp_url,
+)
 from .audio import NoAudioStream, extract_audio, ffmpeg_path, has_audio_stream
 from .logger import get_logger
 
@@ -48,6 +54,7 @@ class YtDlpClient:
 
     def probe_subtitles(self, url: str) -> List[SubtitleInfo]:
         """Probe available subtitles for a video URL."""
+        url = ydlp_url(url)
         try:
             ydl_opts = {
                 **base_ydl_opts(url),
@@ -98,6 +105,7 @@ class YtDlpClient:
         if lang_preference is None:
             lang_preference = ['original', 'ru', 'en', 'auto']
 
+        url = ydlp_url(url)
         try:
             available_subs = self.probe_subtitles(url)
 
@@ -196,6 +204,7 @@ class YtDlpClient:
         Video-only and capped in height, so a short clip costs a few megabytes
         and no FFmpeg merge is needed.
         """
+        url = ydlp_url(url)
         stem = f"{self._stem(url)}_preview"
         height = settings.vision_max_height
 
@@ -229,6 +238,7 @@ class YtDlpClient:
         videos to be transcribed. If the platform does not expose a separate
         audio stream, the video is downloaded and its audio extracted locally.
         """
+        url = ydlp_url(url)
         stem = self._stem(url)
         platform = detect_platform(url) or 'media'
         base_opts = base_ydl_opts(url)

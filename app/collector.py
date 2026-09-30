@@ -22,6 +22,7 @@ from .utils import (
     collect_metadata,
     get_video_info,
 )
+from .photo_posts import looks_like_photo_post
 from .video_processor import VideoProcessor
 from .yt_dlp_client import YtDlpClient
 
@@ -153,13 +154,18 @@ class Collector:
             text_content = None
             segments = None
 
-            try:
-                text_content, subtitle_files = await processor.extract_subtitles(post.url)
-                temp_files.extend(subtitle_files)
-            except Exception as e:
-                logger.warning(f"Субтитры недоступны: {e}")
+            # A photo post has no video track: no subtitles, and audio only when
+            # it is a TikTok slideshow with a soundtrack.
+            is_photo = looks_like_photo_post(post.url, info)
 
-            if not text_content:
+            if not is_photo:
+                try:
+                    text_content, subtitle_files = await processor.extract_subtitles(post.url)
+                    temp_files.extend(subtitle_files)
+                except Exception as e:
+                    logger.warning(f"Субтитры недоступны: {e}")
+
+            if not text_content and not (is_photo and account.platform != 'tiktok'):
                 try:
                     text_content, segments, audio_files = await processor.extract_audio_transcript(
                         post.url
@@ -176,7 +182,7 @@ class Collector:
                 self.storage.save_post(
                     url=post.url, platform=account.platform, account=account.handle,
                     metadata=metadata, status="empty",
-                    error="ни речи, ни кадров",
+                    error="ни речи, ни изображений",
                 )
                 return False
 
@@ -186,6 +192,7 @@ class Collector:
                 platform=account.platform,
                 metadata=metadata,
                 images=images,
+                visual_kind="слайды" if is_photo else "кадры",
             )
             if analysis_path:
                 temp_files.append(analysis_path)

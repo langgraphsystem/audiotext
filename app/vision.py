@@ -80,3 +80,43 @@ def frames_to_data_urls(frames: List[Path]) -> List[str]:
     """Encode every frame, dropping the ones that fail."""
     urls = [frame_to_data_url(f) for f in frames]
     return [u for u in urls if u]
+
+
+def normalize_image(image_path: Path, index: int = 0) -> Optional[Path]:
+    """Re-encode a downloaded slide as a JPEG of the same width as key frames.
+
+    Slides arrive in whatever the platform serves (JPEG, WebP, HEIC) and at full
+    resolution; the model only needs a readable copy that fits the request.
+    """
+    if not image_path.exists():
+        return None
+
+    ffmpeg = ffmpeg_path()
+    if not ffmpeg:
+        # Without FFmpeg a JPEG small enough can still go as it is
+        if image_path.suffix.lower() in ('.jpg', '.jpeg') and file_size_mb(image_path) <= MAX_FRAME_MB:
+            return image_path
+        logger.warning("FFmpeg not found: skipping slide conversion")
+        return None
+
+    target = image_path.with_name(f"{image_path.stem}_slide{index:02d}.jpg")
+    cmd = [
+        ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+        "-i", str(image_path),
+        "-frames:v", "1",
+        "-vf", f"scale={settings.vision_frame_width}:-2",
+        "-q:v", "4",
+        str(target),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 or not target.exists():
+        logger.warning(f"Слайд {image_path.name} не конвертируется: {result.stderr.strip()[:200]}")
+        target.unlink(missing_ok=True)
+        return None
+
+    if file_size_mb(target) > MAX_FRAME_MB:
+        logger.warning(f"Слайд {target.name} слишком большой, пропускаю")
+        target.unlink(missing_ok=True)
+        return None
+
+    return target

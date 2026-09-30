@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     # Downloading video for frames is only worth it for reasonably short clips
     vision_max_duration_minutes: int = 20
     vision_max_height: int = 480
+    # Photo posts (TikTok photomode, Instagram carousels) send slides instead
+    vision_max_slides: int = 10
 
     # Composio (official Instagram Graph API for accounts you manage)
     composio_api_key: Optional[str] = None

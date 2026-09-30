@@ -47,8 +47,10 @@ BOT_COMMANDS = [
 
 # Leftovers from a previous run: hosts like Railway restart the container
 # without clearing an attached volume.
+# Frames and slides land here as well, and the container disk is small
 TEMP_PATTERNS = ("*.mp3", "*.m4a", "*.mp4", "*.webm", "*.mkv", "*.mov",
-                 "*.opus", "*.ogg", "*.wav", "*.vtt", "*.srt", "*.txt")
+                 "*.opus", "*.ogg", "*.wav", "*.vtt", "*.srt", "*.txt",
+                 "*.jpg", "*.jpeg", "*.webp", "*_raw[0-9][0-9]")
 
 
 def clean_workdir() -> None:

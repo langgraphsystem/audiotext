@@ -43,7 +43,7 @@ def test_url_detection():
     os.environ.setdefault("OPENAI_API_KEY", "test")
 
     try:
-        from app.utils import detect_platform
+        from app.utils import detect_platform, ydlp_url
     except Exception as e:
         print(f"❌ Не удалось импортировать app.utils: {e}")
         return False
@@ -52,6 +52,7 @@ def test_url_detection():
         ("https://www.tiktok.com/@user/video/1234567890", "tiktok"),
         ("https://vt.tiktok.com/ZSabcdef/", "tiktok"),
         ("https://vm.tiktok.com/ZSabcdef/", "tiktok"),
+        ("https://www.tiktok.com/@user/photo/1234567890", "tiktok"),
         ("https://www.instagram.com/reel/Cxyz12345/", "instagram"),
         ("https://instagram.com/p/Cxyz12345/", "instagram"),
         ("https://www.instagram.com/tv/Cxyz12345/", "instagram"),
@@ -67,6 +68,16 @@ def test_url_detection():
         else:
             print(f"❌ {url} → {actual} (ожидалось {expected})")
             ok = False
+
+    # Photo posts only work when the URL is reshaped for yt-dlp
+    photo = "https://www.tiktok.com/@user/photo/1234567890"
+    expected_photo = "https://www.tiktok.com/@user/video/1234567890"
+    if ydlp_url(photo) == expected_photo:
+        print(f"✅ фото-пост → {expected_photo}")
+    else:
+        print(f"❌ фото-пост → {ydlp_url(photo)} (ожидалось {expected_photo})")
+        ok = False
+
     return ok
 
 

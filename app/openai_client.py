@@ -213,15 +213,19 @@ class OpenAIClient:
         platform: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         images: Optional[List[str]] = None,
+        visual_kind: str = "кадры",
     ) -> str:
-        """Analyze a video: transcript, publication metadata and key frames."""
+        """Analyze a post: transcript, publication metadata and visual material."""
         source = platform_title(platform)
-        system_prompt = self._build_system_prompt(segments, source, bool(images))
+        system_prompt = self._build_system_prompt(
+            segments, source, bool(images), visual_kind
+        )
         user_prompt = self._build_user_input(text, source, metadata, images)
 
         logger.info(
             f"Sending prompt to {self.brand} | текст: {len(text)} симв. | "
-            f"метаданные: {'есть' if metadata else 'нет'} | кадры: {len(images or [])}"
+            f"метаданные: {'есть' if metadata else 'нет'} | "
+            f"{visual_kind}: {len(images or [])}"
         )
 
         for attempt in range(3):
@@ -231,9 +235,13 @@ class OpenAIClient:
                 except Exception as e:
                     # The model may refuse the frames; the transcript still works
                     if images and _is_image_unsupported(e):
-                        logger.warning(f"Кадры не приняты моделью, анализирую без них: {e}")
+                        logger.warning(
+                            f"Изображения не приняты моделью, анализирую без них: {e}"
+                        )
                         user_prompt = self._build_user_input(text, source, metadata, None)
-                        system_prompt = self._build_system_prompt(segments, source, False)
+                        system_prompt = self._build_system_prompt(
+                            segments, source, False, visual_kind
+                        )
                         images = None
                         content = await self._create_response(system_prompt, user_prompt)
                     else:
@@ -278,6 +286,7 @@ class OpenAIClient:
         segments: Optional[List[Dict[str, Any]]],
         source: str,
         has_images: bool = False,
+        visual_kind: str = "кадры",
     ) -> str:
         """Build the full analysis system prompt."""
         logger.info(f"Using full {source} analysis system prompt.")
@@ -296,14 +305,14 @@ class OpenAIClient:
             "Не используй другие языки в ответе. Весь вывод — на русском.\n"
             "Думай шаг за шагом, соблюдай структуру, форматируй результат для маркетологов "
             "и создателей контента.\n\n"
-            f"Контекст анализа: видео из {source} — данные публикации, расшифровка речи"
-            + (" и кадры из ролика.\n" if has_images else ".\n")
+            f"Контекст анализа: публикация из {source} — данные публикации, расшифровка речи"
+            + (f" и {visual_kind} из публикации.\n" if has_images else ".\n")
             + f"Дополнительные сегменты: {seg_text}.\n\n"
             + "Сгенерируй ответ строго по разделам:\n"
             + (
-                "0. ВИЗУАЛЬНЫЙ РАЗБОР (по кадрам)\n"
+                f"0. ВИЗУАЛЬНЫЙ РАЗБОР (по {visual_kind})\n"
                 "   • Что показано: люди, продукт, обстановка, действия.\n"
-                "   • Текст на экране, подписи, важные детали кадра.\n"
+                "   • Текст на изображениях выпиши дословно, по порядку.\n"
                 "   • Как визуальный ряд связан со сказанным и что он добавляет.\n\n"
                 if has_images else ""
             ) +

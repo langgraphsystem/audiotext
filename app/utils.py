@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 import yt_dlp
+from yt_dlp.networking import HEADRequest
 import os
 from .config import settings
 from .logger import get_logger
@@ -65,6 +66,60 @@ def detect_platform(url: str) -> Optional[str]:
     except Exception:
         return None
     return None
+
+
+# TikTok share links hide the post type until they are expanded.
+TIKTOK_SHORT_LINK_REGEX = re.compile(
+    r'^https?://(?:(?:vm|vt)\.tiktok\.com|(?:www\.)?tiktok\.com/t)/\w+',
+    re.IGNORECASE,
+)
+
+# Photo posts (photomode) live under /photo/; yt-dlp only matches /video/.
+TIKTOK_PHOTO_REGEX = re.compile(
+    r'(tiktok\.com(?:/@[\w.\-]+)?)/photo/', re.IGNORECASE
+)
+
+_resolved_links: dict = {}
+
+
+def resolve_short_link(url: str) -> str:
+    """Expand a TikTok share link to the canonical post URL.
+
+    Photo posts are only recognisable after the redirect: the short link says
+    nothing about whether it points at a video or at a slideshow.
+    """
+    if not TIKTOK_SHORT_LINK_REGEX.match(url or ''):
+        return url
+
+    if url in _resolved_links:
+        return _resolved_links[url]
+
+    resolved = url
+    try:
+        with yt_dlp.YoutubeDL(base_ydl_opts(url)) as ydl:
+            response = ydl.urlopen(HEADRequest(url))
+            resolved = response.url or url
+            response.close()
+        logger.info(f"Короткая ссылка раскрыта: {resolved[-40:]}")
+    except Exception as e:
+        logger.warning(f"Не удалось раскрыть короткую ссылку: {e}")
+
+    _resolved_links[url] = resolved
+    return resolved
+
+
+def ydlp_url(url: str) -> str:
+    """The same post in the URL shape yt-dlp's extractors accept.
+
+    The TikTok extractor matches /video/<id> only, while photomode posts are
+    served under /photo/<id> with the very same id.
+    """
+    return TIKTOK_PHOTO_REGEX.sub(r'\1/video/', resolve_short_link(url))
+
+
+def is_photo_post_url(url: str) -> bool:
+    """Whether the URL points at a TikTok photomode post."""
+    return bool(TIKTOK_PHOTO_REGEX.search(resolve_short_link(url or '')))
 
 
 def platform_title(platform: Optional[str]) -> str:
@@ -338,24 +393,63 @@ def collect_metadata(info: Optional[dict]) -> dict:
     return {k: v for k, v in fields.items() if v not in (None, '', [], 0)}
 
 
+def _first_entry(info: Optional[dict]) -> Optional[dict]:
+    """Flatten a playlist result to its first entry, keeping post-level fields."""
+    if not info or info.get('_type') != 'playlist':
+        return info
+
+    entries = [e for e in (info.get('entries') or []) if e]
+    if not entries:
+        return info
+
+    logger.info(f"Playlist detected, using first of {len(entries)} entries")
+    parent = {k: v for k, v in info.items() if k not in ('entries', '_type')}
+    return {**parent, **entries[0]}
+
+
+def extract_raw_info(url: str) -> Optional[dict]:
+    """Extract post data without processing formats.
+
+    Photo posts have no playable format, and yt-dlp refuses to process such a
+    result — but the raw extraction still carries the caption, the counters and
+    the slide images.
+    """
+    try:
+        ydl_opts = {**base_ydl_opts(url), 'skip_download': True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(ydlp_url(url), download=False, process=False)
+
+        if info and info.get('_type') == 'playlist':
+            # Entries may come as a lazy list
+            info = {**info, 'entries': [e for e in (info.get('entries') or []) if e]}
+
+        return info
+    except Exception as e:
+        logger.warning(f"Сырое извлечение не удалось: {e}")
+        return None
+
+
 def get_video_info(url: str) -> Optional[dict]:
     """Get video information using yt-dlp."""
     try:
         ydl_opts = {**base_ydl_opts(url), 'extract_flat': False, 'skip_download': True}
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(ydlp_url(url), download=False)
 
         # Instagram carousels return a playlist: take the first playable entry
-        if info and info.get('_type') == 'playlist':
-            entries = [e for e in (info.get('entries') or []) if e]
-            if entries:
-                logger.info(f"Playlist detected, using first of {len(entries)} entries")
-                return entries[0]
-
-        return info
+        info = _first_entry(info)
+        if info:
+            return info
 
     except Exception as e:
-        logger.error(f"Error extracting video info: {e}")
-        return None
+        logger.warning(f"Не удалось получить данные обычным способом: {e}")
+
+    # Photo posts and image carousels end up here: no formats to process
+    raw = _first_entry(extract_raw_info(url))
+    if raw:
+        logger.info("Данные получены сырым извлечением (публикация без видео)")
+    else:
+        logger.error(f"Error extracting video info for {url[-24:]}")
+    return raw
 

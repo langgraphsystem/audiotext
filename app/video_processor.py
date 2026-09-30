@@ -10,12 +10,16 @@ from .audio import NoAudioStream
 from .config import settings
 from .logger import get_logger
 from .openai_client import OpenAIClient
+from .photo_posts import download_slides, looks_like_photo_post
 from .stt_engine import STTEngine, format_timestamp_range
 from .utils import check_file_size, cleanup_temp_files, platform_title, vtt_or_srt_to_txt
 from .vision import extract_frames, frames_to_data_urls
 from .yt_dlp_client import YtDlpClient
 
 logger = get_logger(__name__)
+
+# Report wording for the two kinds of visual material we can send to the model
+VISUAL_LABELS = {"кадры": "Кадров разобрано", "слайды": "Слайдов разобрано"}
 
 
 class VideoProcessor:
@@ -110,6 +114,21 @@ class VideoProcessor:
         if not settings.vision_enabled or settings.vision_frames <= 0:
             return [], []
 
+        # Photo posts have no video stream: their slides are the visual content
+        if looks_like_photo_post(url, video_info):
+            try:
+                slides, slide_files = await asyncio.to_thread(download_slides, url)
+            except Exception as e:
+                logger.warning(f"Слайды разобрать не удалось: {e}")
+                return [], []
+
+            if slides:
+                return frames_to_data_urls(slides), slide_files
+
+            logger.info("Слайды скачать не удалось — визуального материала нет")
+            cleanup_temp_files(*slide_files)
+            return [], []
+
         duration = (video_info or {}).get('duration') or 0
         limit_seconds = settings.vision_max_duration_minutes * 60
         if duration and duration > limit_seconds:
@@ -140,6 +159,7 @@ class VideoProcessor:
         platform: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         images: Optional[List[str]] = None,
+        visual_kind: str = "кадры",
     ) -> Tuple[str, Optional[Path]]:
         """Analyze content with the model and save the report to a file.
 
@@ -162,6 +182,7 @@ class VideoProcessor:
             platform=platform,
             metadata=metadata,
             images=images,
+            visual_kind=visual_kind,
         )
 
         if not analysis or not analysis.strip():
@@ -174,7 +195,8 @@ class VideoProcessor:
         analysis_filename = f"{brand.replace(' ', '_')}_Analysis_{timestamp}.txt"
         analysis_path = settings.workdir / analysis_filename
 
-        visual_note = f"Кадров разобрано: {len(images)}\n" if images else ""
+        visual_label = VISUAL_LABELS.get(visual_kind, "Изображений разобрано")
+        visual_note = f"{visual_label}: {len(images)}\n" if images else ""
 
         header = f"""═══════════════════════════════════════════════════════════════
 🌙 ПРОФЕССИОНАЛЬНЫЙ АНАЛИЗ КОНТЕНТА · {source.upper()}
