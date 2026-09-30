@@ -241,7 +241,7 @@ INSTAGRAM_COOKIES_FILE=/app/cookies/instagram.txt   # если нужен зак
 | `COMPOSIO_API_KEY` | — | Ключ Composio для источника `composio:instagram` |
 | `COMPOSIO_CONNECTED_ACCOUNT_ID` | — | Если в Composio подключено несколько аккаунтов |
 | `COMPOSIO_IG_USER_ID` | `me` | Чей аккаунт читать: `me` или числовой ID |
-| `COMPOSIO_VIDEOS_ONLY` | `true` | Собирать только видео, пропуская фото-публикации |
+| `COMPOSIO_VIDEOS_ONLY` | `false` | `true` — собирать только видео, пропуская фото-публикации |
 | `COOKIES_FROM_BROWSER` | — | Брать cookies из браузера: `chrome`, `firefox`, `edge`… (только локально) |
 | `SOURCE_ACCOUNTS` | — | Отслеживаемые аккаунты через запятую |
 | `SOURCE_SCAN_INTERVAL_HOURS` | `24` | Периодичность обхода; `0` отключает |

@@ -75,8 +75,8 @@ class Settings(BaseSettings):
     composio_connected_account_id: Optional[str] = None
     composio_user_id: Optional[str] = None
     composio_ig_user_id: str = "me"
-    # Feed posts are usually reels; set false to also collect photo posts
-    composio_videos_only: bool = True
+    # Photo posts are collected too (slides go to the model); set true to skip them
+    composio_videos_only: bool = False
 
     # Collection of tracked accounts
     # Comma-separated: full profile URLs or "tiktok:@user" / "instagram:user"
