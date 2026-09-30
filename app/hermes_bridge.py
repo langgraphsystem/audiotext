@@ -23,7 +23,8 @@ JOBS_KEY = web.AppKey("bridge_jobs", dict)
 ACTIVE_KEY = web.AppKey("bridge_active", list)
 
 _INSTAGRAM_PATH = re.compile(r"^/(?:reel|p|tv)/[A-Za-z0-9_-]+/?$")
-_TIKTOK_PATH = re.compile(r"^/@[A-Za-z0-9_.-]+/video/[0-9]+/?$")
+# photo/<id> is a photomode post: slides instead of a video track
+_TIKTOK_PATH = re.compile(r"^/@[A-Za-z0-9_.-]+/(?:video|photo)/[0-9]+/?$")
 
 
 def valid_video_url(value: object) -> bool:
@@ -55,6 +56,7 @@ async def process_video(url: str) -> dict:
         check_audio_duration, cleanup_temp_files, collect_metadata,
         detect_platform, get_video_info,
     )
+    from .photo_posts import looks_like_photo_post
     from .video_processor import VideoProcessor
     from .yt_dlp_client import YtDlpClient
 
@@ -69,14 +71,19 @@ async def process_video(url: str) -> dict:
 
         client = OpenAIClient()
         processor = VideoProcessor(YtDlpClient(), STTEngine(), client)
+        platform = detect_platform(url)
+        # A photo post has no video track: no subtitles, and audio only when it
+        # is a TikTok slideshow with a soundtrack
+        is_photo = looks_like_photo_post(url, info)
         text = None
         segments = None
-        try:
-            text, found = await processor.extract_subtitles(url)
-            files.extend(found)
-        except Exception as exc:
-            logger.warning("Bridge subtitles unavailable: %s", type(exc).__name__)
-        if not text:
+        if not is_photo:
+            try:
+                text, found = await processor.extract_subtitles(url)
+                files.extend(found)
+            except Exception as exc:
+                logger.warning("Bridge subtitles unavailable: %s", type(exc).__name__)
+        if not text and not (is_photo and platform != "tiktok"):
             try:
                 text, segments, found = await processor.extract_audio_transcript(url)
                 files.extend(found)
@@ -86,12 +93,12 @@ async def process_video(url: str) -> dict:
         images, found = await processor.collect_visual_context(url, info)
         files.extend(found)
         if not (text and len(text.strip()) >= 10) and not images:
-            raise ValueError("No speech or video frames could be extracted")
+            raise ValueError("No speech or visual material could be extracted")
 
-        platform = detect_platform(url)
         metadata = collect_metadata(info)
         analysis, report_path = await processor.analyze_content(
             text or "", segments, platform=platform, metadata=metadata, images=images,
+            visual_kind="слайды" if is_photo else "кадры",
         )
         if report_path:
             files.append(report_path)

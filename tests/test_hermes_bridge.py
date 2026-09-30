@@ -20,6 +20,7 @@ class UrlTests(unittest.TestCase):
             "https://www.instagram.com/reel/ABC123_/",
             "https://instagram.com/p/ABC123/",
             "https://www.tiktok.com/@owner/video/1234567890",
+            "https://www.tiktok.com/@owner/photo/1234567890",
         )
         rejected = (
             "https://www.instagram.com/owner/",
