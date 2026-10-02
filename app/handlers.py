@@ -2,9 +2,12 @@
 Telegram bot message handlers.
 """
 import asyncio
+import base64
+import io
 from typing import Optional
 
-from aiogram import Router, F
+from aiogram import Bot, Router, F
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -20,6 +23,14 @@ from .utils import (
     extract_supported_urls,
     get_video_info,
     platform_title,
+)
+from .grok_video import (
+    VideoGenerationError,
+    check_rate_limit as video_rate_limit,
+    clamp_duration,
+    download_video,
+    generate_video,
+    is_configured as video_configured,
 )
 from .photo_posts import looks_like_photo_post
 from .yt_dlp_client import YtDlpClient
@@ -110,6 +121,7 @@ async def cmd_help(message: Message):
 • `/sources` - Отслеживаемые аккаунты и статистика сбора
 • `/scan` - Собрать новые публикации прямо сейчас
 • `/digest` - Выгрузка собранного материала файлом
+• `/video` - Сгенерировать ролик по тексту или картинке (Grok Imagine, платно, только админу)
 
 **Поддерживаемые ссылки:**
 • `https://www.tiktok.com/@username/video/...`
@@ -138,6 +150,111 @@ async def cmd_help(message: Message):
 • Длинные видео обрабатываются дольше — это нормально"""
 
     await message.answer(help_text, parse_mode="Markdown")
+
+
+VIDEO_USAGE = (
+    "🎬 Генерация видео (Grok Imagine)\n\n"
+    "• /video описание — ролик по тексту\n"
+    "• фото с подписью /video описание — ролик, который начинается с этой картинки\n"
+    "• /video 8 описание — свою длительность в секундах (1–15)\n\n"
+    "Генерация платная: оплата идёт за секунду ролика."
+)
+
+
+async def _photo_data_url(message: Message, bot: Bot) -> Optional[str]:
+    """The picture attached to the command, or to the message it replies to."""
+    photos = message.photo or (
+        message.reply_to_message.photo if message.reply_to_message else None
+    )
+    if not photos:
+        return None
+
+    buffer = io.BytesIO()
+    await bot.download(photos[-1], destination=buffer)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    # Telegram re-encodes every photo it stores as JPEG
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+@router.message(Command("video"))
+async def cmd_video(message: Message, command: CommandObject, bot: Bot):
+    """Generate a short clip from a text prompt and/or a picture."""
+    # Every clip costs money, so an unset ADMIN_CHAT_ID must not leave this open
+    if settings.admin_chat_id is None:
+        await message.answer(
+            "⛔ Генерация платная и по умолчанию закрыта: задайте ADMIN_CHAT_ID, "
+            "чтобы команда работала только в вашем чате."
+        )
+        return
+    if not _is_admin(message):
+        await message.answer("⛔ Команда доступна только в админском чате.")
+        return
+
+    if not video_configured():
+        await message.answer("❌ Не задан XAI_API_KEY — ключ создаётся в консоли xAI.")
+        return
+
+    prompt = (command.args or "").strip()
+    seconds = clamp_duration()
+
+    # An optional leading number is the duration in seconds
+    head, _, rest = prompt.partition(" ")
+    if head.isdigit():
+        seconds = clamp_duration(int(head))
+        prompt = rest.strip()
+
+    try:
+        image = await _photo_data_url(message, bot)
+    except (TelegramAPIError, OSError) as e:
+        logger.warning(f"Не удалось скачать фото для генерации: {e}")
+        await message.answer("❌ Не получилось скачать картинку из Telegram. Попробуйте ещё раз.")
+        return
+
+    if not prompt and not image:
+        await message.answer(VIDEO_USAGE)
+        return
+
+    refusal = video_rate_limit()
+    if refusal:
+        await message.answer(f"⏱️ {refusal}")
+        return
+
+    status = StatusMessage(message)
+    clip_path = None
+
+    try:
+        await status.set(f"🎬 Запускаю генерацию ({seconds} с)...")
+
+        async def progress(elapsed: int) -> None:
+            # Telegram throttles message edits; every 15 s is plenty
+            await status.set(f"🎬 Генерирую ролик... {elapsed // 15 * 15} с")
+
+        video = await generate_video(prompt, image, seconds, progress=progress)
+
+        await status.set("📥 Скачиваю ролик...")
+        clip_path = await download_video(video)
+
+        caption = f"🎬 Grok Imagine · {video.duration or seconds} с"
+        if prompt:
+            caption += f"\n{prompt[:180]}"
+
+        await message.answer_video(
+            FSInputFile(clip_path), caption=caption, supports_streaming=True,
+        )
+        await status.set("✅ Готово!")
+
+    except VideoGenerationError as e:
+        logger.warning(f"Генерация видео не удалась: {e}")
+        await status.set(f"❌ {e}")
+    except TelegramAPIError as e:
+        logger.error(f"Не удалось отправить ролик: {e}")
+        await status.set("❌ Ролик сгенерирован, но Telegram не принял файл. Попробуйте ещё раз.")
+    except Exception as e:
+        logger.error(f"Ошибка генерации видео: {e}", exc_info=True)
+        await status.set("❌ Что-то пошло не так при генерации. Попробуйте позже.")
+    finally:
+        if clip_path:
+            cleanup_temp_files(clip_path)
 
 
 # search mode: the link may appear anywhere in the message, not only at the start

@@ -69,6 +69,21 @@ class Settings(BaseSettings):
     # Photo posts (TikTok photomode, Instagram carousels) send slides instead
     vision_max_slides: int = 10
 
+    # Grok Imagine (xAI): the /video command. Billed per second of output
+    xai_api_key: Optional[str] = None
+    xai_base_url: str = "https://api.x.ai/v1"
+    xai_video_model: str = "grok-imagine-video-1.5"
+    # 1-15 seconds; the default is short on purpose, cost grows with duration
+    xai_video_duration: int = 5
+    # 480p / 720p / 1080p
+    xai_video_resolution: str = "480p"
+    # Only for text-to-video: an image input keeps the aspect of the picture
+    xai_video_aspect_ratio: str = "9:16"
+    xai_video_audio: bool = True
+    xai_video_timeout_seconds: int = 600
+    xai_video_poll_seconds: int = 5
+    xai_video_max_per_hour: int = 6
+
     # Composio (official Instagram Graph API for accounts you manage)
     composio_api_key: Optional[str] = None
     composio_base_url: str = "https://backend.composio.dev/api/v3"
