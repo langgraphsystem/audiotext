@@ -26,7 +26,11 @@ test:
 	$(PY) test_setup.py
 
 lint:
-	$(PY) -m compileall -q app test_setup.py
+	$(PY) -m compileall -q app scripts test_setup.py
+
+# Ролик в Grok Imagine (платно): make video PROMPT="закат над морем" ARGS="--duration 8"
+video:
+	$(PY) scripts/grok_video.py "$(PROMPT)" $(ARGS)
 
 # Запуск в Docker: FFmpeg и зависимости уже в образе
 docker-up:
