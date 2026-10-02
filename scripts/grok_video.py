@@ -4,8 +4,13 @@ Generate a video with Grok Imagine (xAI API) from the command line.
 
 This is a tool for Claude (or for you), not part of the bot: content is produced
 in the Claude app, and this script is how a finished idea becomes a clip. It is
-standalone on purpose — it needs only XAI_API_KEY, not the bot's BOT_TOKEN and
+standalone on purpose — it needs only the xAI key, not the bot's BOT_TOKEN and
 OPENAI_API_KEY — so it runs the same on a laptop and in a cloud session.
+
+The key is taken from XAI_API_KEY (environment or .env). In a cloud session it can
+instead be stored as a credential of the environment: then there is no key to read
+here, the request goes out without Authorization and the environment adds the header
+for api.x.ai itself — which also keeps the key out of the session entirely.
 
     python scripts/grok_video.py "закат над морем, медленный наезд"
     python scripts/grok_video.py "оживи кадр" --image photo.jpg --duration 8
@@ -111,7 +116,10 @@ def build_body(args: argparse.Namespace, image: Optional[str]) -> dict:
 def api_error(response: httpx.Response) -> GenerationError:
     status = response.status_code
     if status in (401, 403):
-        return GenerationError("xAI не принял ключ: проверьте XAI_API_KEY и доступ к Imagine API")
+        return GenerationError(
+            "xAI не принял ключ: проверьте XAI_API_KEY (или credential окружения для api.x.ai) "
+            "и доступ к Imagine API"
+        )
     if status == 402:
         return GenerationError("на счёте xAI закончились средства")
     if status == 429:
@@ -253,13 +261,15 @@ def main(argv=None) -> int:
             return 0
 
         key = load_api_key()
-        if not key:
-            raise GenerationError("не задан XAI_API_KEY (переменная окружения или строка в .env)")
-
         log(f"Grok Imagine: {body['duration']} с, {body['resolution']}"
             f"{', по картинке' if image else ', по тексту'}")
 
-        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json"}
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        else:
+            # Not an error: the environment may inject the header for api.x.ai
+            log("XAI_API_KEY не задан — рассчитываю на credential окружения")
         with httpx.Client(timeout=httpx.Timeout(60.0)) as client:
             job = generate(client, base_url, headers, body, args.timeout, args.poll)
 
