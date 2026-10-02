@@ -99,6 +99,8 @@ def build_body(args: argparse.Namespace, image: Optional[str]) -> dict:
     }
     if args.prompt:
         body["prompt"] = args.prompt
+        if args.negative:
+            body["prompt"] += f"\n\nAvoid (negative prompt): {args.negative}"
 
     if image:
         # The clip starts from this picture and keeps its proportions;
@@ -222,6 +224,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     )
     parser.add_argument("prompt", nargs="?", default="",
                         help="что должно происходить в ролике (можно пустым, если есть --image)")
+    parser.add_argument("--negative", default="",
+                        help="чего не должно быть в кадре; у xAI для видео нет отдельного поля "
+                             "negative prompt, поэтому уходит отдельным абзацем после промпта")
     parser.add_argument("--image", help="картинка, с которой начинается ролик: файл или https-ссылка")
     parser.add_argument("--duration", type=int, default=5, help="секунд, 1-15 (по умолчанию 5)")
     parser.add_argument("--resolution", choices=RESOLUTIONS, default="480p",
@@ -286,6 +291,7 @@ def main(argv=None) -> int:
         "path": str(target),
         "bytes": target.stat().st_size,
         "duration": job["video"].get("duration"),
+        "url": job["video"]["url"],
         "model": job.get("model"),
         "request_id": job["request_id"],
     }

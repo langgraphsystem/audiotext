@@ -33,6 +33,8 @@ Claude: Claude берёт собранный материал (`/digest`), пр�
 python scripts/grok_video.py "закат над морем, медленный наезд"          # по тексту
 python scripts/grok_video.py "оживи кадр" --image photo.jpg --duration 8  # от картинки
 python scripts/grok_video.py "..." --dry-run                              # показать запрос, ничего не тратя
+python scripts/grok_video.py "..." --image кадр.png --negative "text, letters"   # negative prompt отдельным абзацем
+python scripts/grok_image.py "..." --out кадр.png                        # картинка в Grok Imagine
 make video PROMPT="закат над морем" ARGS="--duration 8"                   # то же через make
 ```
 
