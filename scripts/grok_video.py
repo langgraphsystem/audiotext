@@ -117,6 +117,13 @@ def build_body(args: argparse.Namespace, image: Optional[str]) -> dict:
 
 def api_error(response: httpx.Response) -> GenerationError:
     status = response.status_code
+    # xAI answers 403 both for a bad key and for an exhausted balance; only the
+    # message tells them apart, and "check the key" would send the user the wrong way
+    if status in (401, 403) and re.search(r"credits|spending limit", response.text, re.I):
+        return GenerationError(
+            "у команды xAI закончились кредиты или достигнут месячный лимит расходов: "
+            "пополните баланс или поднимите лимит в консоли xAI"
+        )
     if status in (401, 403):
         return GenerationError(
             "xAI не принял ключ: проверьте XAI_API_KEY (или credential окружения для api.x.ai) "
