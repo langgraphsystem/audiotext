@@ -2,7 +2,7 @@
 
 Research method note: direct network egress from this environment was blocked; official pages were read through a fetch proxy (TinyFish). All figures below are quoted from the pages as fetched on 2026-10-11 unless marked otherwise. Third-party sources are labelled "(third-party)".
 
-Use-case lens throughout: ~10 clips per episode, each ~6 s, 9:16 vertical, image-to-video, ≥1080x1920, negative prompt wanted, no text in frame, no audio needed, realistic 1890s Central Asian / Kyrgyz people in traditional dress (unnamed, not real identifiable individuals).
+The use case throughout: about 10 clips per episode, each about 6 s, 9:16 vertical, image-to-video, at least 1080x1920, a negative prompt wanted, no text in frame, no audio needed. Subject matter is realistic 1890s Central Asian / Kyrgyz people in traditional dress (unnamed, not real identifiable individuals). The developer is an **individual based in the USA** (see Q8 for signup, KYC, payment and regional availability).
 
 ## Q1. Luma AI — which API, models, endpoint, auth, async pattern
 
@@ -182,3 +182,31 @@ Only **PixVerse (V6/C1, direct or via Higgsfield)** natively supports a 6 s dura
 ### Gaps
 - None of the four providers' docs (as fetched) state watermark policy for API output or KYC/country restrictions; treat as unverified and check during signup.
 - No provider explicitly addresses depictions of specific ethnic/historical groups; only generic "real person / deepfake / public figure" rules (Luma) and generic NSFW/moderation codes (PixVerse, Higgsfield) were found.
+
+## Q8. Availability for a US-based individual developer (signup, KYC, payment, region)
+
+### Takeaway
+None of the four providers documents a business-only requirement, KYC or ID verification, or any restriction that would exclude a US individual. All four are self-serve: email/OAuth signup, an API key from a dashboard, and a card-funded prepaid balance or membership. The differences that matter are the minimum spend and the legal/data jurisdiction. Luma, Pika and Higgsfield are US-oriented services with no minimum (Pika needs $10/month). PixVerse is operated from Singapore with engineering in Beijing and Shanghai, and its smallest credit top-up is $10.
+
+### Cited Findings
+- **Luma:** "Create an account at platform.lumalabs.ai, generate a key from the developer dashboard". "Is there a free tier? No. The API is Pay-as-you-go from the first image, with no minimum spend or contract." Auto-reload: "Stripe charges your default payment method". To keep usage isolated, "ask support to provision a separate client". — [Luma Agents FAQ](https://docs.agents.lumalabs.ai/guides/faq/)
+- **Luma:** pay-as-you-go has "No minimum spend, no contract". Provisioned Throughput needs a minimum of 8 units and a 1-month or longer contract (video is quoted by sales). — [Luma Pricing](https://docs.agents.lumalabs.ai/guides/pricing)
+- **Pika:** the membership is "$10/month... New members get a $10 credit toward their first month of usage... pay-as-you-go... You can cancel anytime." The site markets it to "Indie Developers". — [dev.pika.art](https://dev.pika.art/)
+- **Pika:** "Submit rejections... (balance, rate limit) return the failed job envelope" with `insufficient_balance`, and the docs mention an "org balance or postpaid cycle limit". So usage is billed against an org balance. — [Pika 2.5 i2v](https://dev.pika.art/models/pika/pika-2.5/image-to-video)
+- **PixVerse:** signup is "login with Google, Apple, Discord, E-mail", then you create a key under "API Keys". — [How to get API key](https://docs.platform.pixverse.ai/how-to-get-api-key-882968m0)
+- **PixVerse:** to subscribe or buy credits you go to "Billing", "Enter your payment details" and "Confirm your subscription". The smallest credit pack is $10 for 2,000 credits. A Free membership tier exists with a concurrency of 3. — [Subscribe API plans](https://docs.platform.pixverse.ai/how-to-subscribe-api-plans-882969m0); [Pricing](https://docs.platform.pixverse.ai/pricing-796039m0); [Rate limit](https://docs.platform.pixverse.ai/rate-limit-796040m0)
+- **PixVerse jurisdiction:** the privacy policy says "We are headquartered in Singapore and may use service providers that operate in other countries." A PixVerse paid-service ToS is "governed by the laws of [Singapore]". — [PixVerse Privacy Policy](https://pixverse.ai/en/privacy-policy) (search snippet); [PixVerse Growth Studio Terms](https://pixverse.ai/en/pixverse-growth-studio-terms-of-paid-service) (search snippet; this is a different product's ToS from the API's)
+- **PixVerse jurisdiction:** the company has "150 employees across offices in Singapore, Beijing, and Shanghai" (July 2026). — [TechCrunch](https://techcrunch.com/2026/07/13/video-generation-startup-pixverse-raises-439m-valuation-soars-past-2b/) (third-party)
+- **PixVerse jurisdiction:** it is backed by Alibaba. — [Bloomberg](https://www.bloomberg.com/news/articles/2026-03-12/alibaba-backed-video-ai-startup-pixverse-raises-300-million) (third-party)
+- **PixVerse compliance:** PixVerse claims ISO/IEC 27001 certification (by DNV) and SOC 2 controls. — [pixverse.ai/en/developers](https://pixverse.ai/en/developers)
+- **Higgsfield:** the steps are "Create an account and choose between personal and company use. Add a payment method and top up your balance. Create your first API key... unlocks 20 concurrent requests." Billing is in "US dollars... no subscription"; "spending stops at zero"; top-ups stay valid for one year. — [Higgsfield API blog, 2026-09-16](https://higgsfield.ai/blog/higgsfield-api); [Higgsfield how-to blog](https://higgsfield.ai/blog/generate-ai-videos-higgsfield-api)
+- **Higgsfield:** pay-as-you-go is the default; invoice billing is available only on a committed-use contract. — [Higgsfield FAQ](https://docs.higgsfield.ai/docs/help/faq)
+
+### Inferences
+- For a US individual the practical entry cost is about $10 for Luma (no minimum; you top up what you need), $10 plus a $10/month membership for Pika (the first month's $10 credit offsets it), $10 for PixVerse, and whatever you top up for Higgsfield. No provider asks for a business entity, a tax ID or ID documents.
+- PixVerse is the one non-US operator, with a Singapore entity and teams in China. That matters only for data residency or vendor-policy reasons, not for access. Prompts and the uploaded source stills of historical scenes are low-sensitivity data.
+- Moderation rules apply worldwide and do not depend on region. The real-person and deepfake policy (Luma) and the NSFW and moderation checks (PixVerse, Higgsfield) are the relevant limits, not the user's country.
+
+### Gaps
+- No provider's API docs or FAQ that I fetched list sanctioned or unsupported countries, or state any KYC thresholds. The full ToS pages (Luma, Pika API agreement, the PixVerse platform ToS text, Higgsfield) were not readable through the fetch tool. US availability is therefore inferred from self-serve signup with no stated restriction, not from an explicit "US supported" statement.
+- US sales-tax handling and accepted payment methods beyond "card/payment method" (Luma names Stripe) are not documented.
