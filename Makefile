@@ -32,6 +32,10 @@ lint:
 video:
 	$(PY) scripts/grok_video.py "$(PROMPT)" $(ARGS)
 
+# Ролик в LTX-2.5 на своём эндпоинте Runpod (платно): make ltx PROMPT="..." ARGS="--image кадр.png"
+ltx:
+	$(PY) scripts/ltx_video.py "$(PROMPT)" $(ARGS)
+
 # Запуск в Docker: FFmpeg и зависимости уже в образе
 docker-up:
 	docker compose up --build
@@ -43,4 +47,4 @@ clean:
 	rm -rf data/*.txt data/*.m4a data/*.mp3 data/*.mp4 data/*.webm data/*.vtt data/*.srt \
 		data/*.jpg __pycache__ app/__pycache__
 
-.PHONY: setup venv install env run webhook test lint docker-up docker-down clean
+.PHONY: setup venv install env run webhook test lint video ltx docker-up docker-down clean

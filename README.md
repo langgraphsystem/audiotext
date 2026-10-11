@@ -45,6 +45,22 @@ make video PROMPT="закат над морем" ARGS="--duration 8"            
 JSON с путём. По умолчанию 5 секунд в 480p в формате 9:16; оплата идёт за секунду ролика,
 а 720p и 1080p дороже и генерируются дольше.
 
+Второй вариант — **LTX-2.5** (открытая модель Lightricks) на собственном serverless-эндпоинте
+Runpod, скрипт `scripts/ltx_video.py`. Только от картинки, 1–20 секунд, 720p (16:9, 9:16 или 1:1):
+
+```bash
+python scripts/ltx_video.py "slow push-in, smoke drifts" --image кадр.png              # 6 с, 16:9
+python scripts/ltx_video.py "..." --image кадр.png --duration 8 --strength 0.9          # держать кадр жёстче
+python scripts/ltx_video.py "..." --image кадр.png --dry-run                            # ничего не тратя
+make ltx PROMPT="slow push-in" ARGS="--image кадр.png"
+```
+
+Воркер — `vavo/LTX2.5-serverless` (ComfyUI, distilled INT8, GPU от 48 ГБ), модели лежат на
+network volume. Ключ — `RUNPOD_API_KEY` или credential окружения для `api.runpod.ai`. Оплата —
+за секунды работы GPU; первый запуск дольше и дороже, он качает модели на volume. Быстрая
+версия модели работает с CFG=1, поэтому `--negative` почти ничего не даёт: запреты пишите в
+сам промпт. Звук LTX генерирует всегда; скрипт его вырезает, `--keep-audio` оставляет.
+
 ## 📚 Сбор материала по аккаунтам
 
 Кроме разбора одиночных ссылок бот умеет **накапливать базу**: раз в сутки обходит
