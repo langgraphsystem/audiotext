@@ -55,13 +55,13 @@ python scripts/ltx_video.py "..." --image кадр.png --dry-run                
 make ltx PROMPT="slow push-in" ARGS="--image кадр.png"
 ```
 
-Воркер — `vavo/LTX2.5-serverless` (ComfyUI, INT8, GPU от 48 ГБ), модели лежат на network volume.
-Ключ — `RUNPOD_API_KEY` или credential окружения для `api.runpod.ai`. Оплата — за секунды работы
-GPU. По умолчанию первый проход делает полная модель (`--model dev`: CFG 4, 30 шагов, ~4–5 мин на
-ролик), увеличение до 720p — быстрая distilled. `--model distilled` — всё на быстрой (~1 мин), но
-с CFG=1: `--negative` там почти ничего не даёт, запреты пишите в сам промпт. Кадр по умолчанию
-держится жёстко (`--strength 1.0`). Звук LTX генерирует всегда; скрипт его вырезает,
-`--keep-audio` оставляет.
+Воркер — `vavo/LTX2.5-serverless` (ComfyUI), модели лежат на network volume. Ключ —
+`RUNPOD_API_KEY` или credential окружения для `api.runpod.ai`. Оплата — за секунды работы GPU.
+По умолчанию — полная модель (`--model dev`: bf16 на обоих проходах, CFG 4) в 1080p (1088×1920
+для 9:16); ей нужна карта 80 ГБ (H100, ~5 мин на ролик). `--model distilled --resolution 720p` —
+быстрая INT8 на A40 (~1 мин), но с CFG=1: `--negative` там почти ничего не даёт, запреты пишите в
+сам промпт. Кадр по умолчанию держится жёстко (`--strength 1.0`). Звук LTX генерирует всегда;
+скрипт его вырезает, `--keep-audio` оставляет.
 
 ## 📚 Сбор материала по аккаунтам
 

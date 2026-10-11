@@ -43,11 +43,13 @@ WORKFLOW_PATH = Path(__file__).resolve().parent / "ltx25_i2v_workflow.json"
 DEFAULT_ENDPOINT = "ujaztrmgrdjaxi"
 FPS = 24
 MIN_DURATION, MAX_DURATION = 1, 20
-ASPECT_RATIOS = {
-    "16:9": (1280, 720),
-    "9:16": (720, 1280),
-    "1:1": (1024, 1024),
+# Final size; the first pass runs at half of it, and both halves must be
+# multiples of 32, hence 1088 rather than 1080
+RESOLUTIONS = {
+    "720p": {"16:9": (1280, 720), "9:16": (720, 1280), "1:1": (1024, 1024)},
+    "1080p": {"16:9": (1920, 1088), "9:16": (1088, 1920), "1:1": (1536, 1536)},
 }
+ASPECT_RATIOS = RESOLUTIONS["720p"]
 
 # Node ids of the workflow, as used by the worker's own payload builder
 PROMPT_NODE = "398:376"
@@ -61,14 +63,19 @@ ENHANCER_NODE = "398:380"
 ENHANCER_TOGGLE_NODE = "398:383"
 FIRST_FRAME_NODE = "398:357"
 SEED_NODES = ("398:338", "398:339")
-# First (low-res) pass; the second pass refines the x2 upscale and stays distilled
-BASE_GUIDER_NODE = "398:388"
-BASE_SAMPLER_NODE = "398:352"
-BASE_SIGMAS_NODE = "398:397"
+MODEL_NODE = "398:384"
+TEXT_ENCODER_NODE = "398:387"
+IMAGE_RESIZE_NODE = "398:351"
+BASE_GUIDER_NODE, REFINE_GUIDER_NODE = "398:388", "398:391"
+BASE_SAMPLER_NODE, REFINE_SAMPLER_NODE = "398:352", "398:341"
+BASE_SIGMAS_NODE, REFINE_SIGMAS_NODE = "398:397", "398:396"
 BASE_LATENT_NODE = "398:377"
-DEV_MODEL_NODE = "398:900"
 
-DEV_TRANSFORMER = "ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors"
+DEV_TRANSFORMER = "ltx-2.5-22b-dev-transformer-bf16.safetensors"
+DEV_TEXT_ENCODER = "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"
+# The refine pass starts from the x2-upscaled latent at sigma 0.85, as the
+# distilled schedule does, but the dev model needs many small steps there
+REFINE_SIGMAS = ", ".join(f"{0.85 - 0.05 * i:.2f}" for i in range(17)) + ", 0.0"
 MODELS = ("dev", "distilled")
 DEFAULT_STEPS = 30
 DEFAULT_CFG = 4.0
@@ -113,7 +120,7 @@ def image_to_data_url(source: str) -> str:
 
 def build_payload(args: argparse.Namespace, image_data_url: str) -> dict:
     workflow = json.loads(WORKFLOW_PATH.read_text(encoding="utf-8"))
-    width, height = ASPECT_RATIOS[args.aspect_ratio]
+    width, height = RESOLUTIONS[args.resolution][args.aspect_ratio]
     rng = random.Random(args.seed) if args.seed is not None else random.SystemRandom()
 
     workflow[PROMPT_NODE]["inputs"]["value"] = args.prompt
@@ -133,8 +140,9 @@ def build_payload(args: argparse.Namespace, image_data_url: str) -> dict:
     if args.negative:
         workflow[NEGATIVE_NODE]["inputs"]["text"] = args.negative
 
+    workflow[IMAGE_RESIZE_NODE]["inputs"]["resize_type.longer_size"] = max(width, height)
     if args.model == "dev":
-        use_dev_base_pass(workflow, args.steps, args.cfg)
+        use_dev_model(workflow, args.steps, args.cfg)
 
     for node in SEED_NODES:
         workflow[node]["inputs"]["noise_seed"] = rng.randrange(1, 10**15)
@@ -147,21 +155,19 @@ def build_payload(args: argparse.Namespace, image_data_url: str) -> dict:
     }
 
 
-def use_dev_base_pass(workflow: dict, steps: int, cfg: float) -> None:
-    """Run the first pass on the full model instead of the distilled one.
+def use_dev_model(workflow: dict, steps: int, cfg: float) -> None:
+    """Run both passes on the full bf16 model with real guidance.
 
     Distilled weights are trained for 8 fixed sigmas at CFG=1, which is why the
-    negative prompt does nothing and complex prompts are followed loosely. The dev
-    model needs real guidance and a full schedule; the upscale pass keeps the
-    distilled model, which is what it was tuned for.
+    negative prompt did nothing and complex prompts were followed loosely. The
+    owner asked for no distilled or INT8 weights anywhere in the chain.
     """
-    workflow[DEV_MODEL_NODE] = {
-        "class_type": "UNETLoader",
-        "inputs": {"unet_name": DEV_TRANSFORMER, "weight_dtype": "default"},
-    }
-    guider = workflow[BASE_GUIDER_NODE]["inputs"]
-    guider["model"] = [DEV_MODEL_NODE, 0]
-    guider["video_cfg"] = cfg
+    workflow[MODEL_NODE]["inputs"]["unet_name"] = DEV_TRANSFORMER
+    workflow[TEXT_ENCODER_NODE]["inputs"]["clip_name"] = DEV_TEXT_ENCODER
+    for guider in (BASE_GUIDER_NODE, REFINE_GUIDER_NODE):
+        workflow[guider]["inputs"]["video_cfg"] = cfg
+    for sampler in (BASE_SAMPLER_NODE, REFINE_SAMPLER_NODE):
+        workflow[sampler]["inputs"]["sampler_name"] = "euler"
     workflow[BASE_SIGMAS_NODE] = {
         "class_type": "LTXVScheduler",
         "inputs": {
@@ -169,7 +175,7 @@ def use_dev_base_pass(workflow: dict, steps: int, cfg: float) -> None:
             "stretch": True, "terminal": 0.1, "latent": [BASE_LATENT_NODE, 0],
         },
     }
-    workflow[BASE_SAMPLER_NODE]["inputs"]["sampler_name"] = "euler"
+    workflow[REFINE_SIGMAS_NODE]["inputs"]["sigmas"] = REFINE_SIGMAS
 
 
 def api_error(response: httpx.Response) -> GenerationError:
@@ -292,10 +298,13 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="чего не должно быть в кадре; учитывается только полной моделью "
                              "(--model dev), быстрая работает с CFG=1 и негатив игнорирует")
     parser.add_argument("--model", choices=MODELS, default="dev",
-                        help="dev — полная модель, точнее следует промпту, ~4-5 мин на ролик; "
-                             "distilled — быстрая, ~1 мин, но с CFG=1 (по умолчанию dev)")
+                        help="dev — полная bf16-модель на обоих проходах, с CFG, нужна карта 80 ГБ; "
+                             "distilled — быстрая INT8, ~1 мин на A40, но с CFG=1 (по умолчанию dev)")
+    parser.add_argument("--resolution", choices=tuple(RESOLUTIONS), default="1080p",
+                        help="итоговое разрешение (по умолчанию 1080p: 1088x1920 для 9:16)")
     parser.add_argument("--steps", type=int, default=DEFAULT_STEPS,
-                        help=f"шагов первого прохода для dev (по умолчанию {DEFAULT_STEPS})")
+                        help=f"шагов первого прохода для dev (по умолчанию {DEFAULT_STEPS}; "
+                             "второй проход — 17 шагов)")
     parser.add_argument("--cfg", type=float, default=DEFAULT_CFG,
                         help=f"сила следования промпту для dev (по умолчанию {DEFAULT_CFG})")
     parser.add_argument("--duration", type=int, default=6, help="секунд, 1-20 (по умолчанию 6)")
@@ -344,7 +353,8 @@ def main(argv=None) -> int:
             changed = [PROMPT_NODE, NEGATIVE_NODE, DURATION_NODE, WIDTH_NODE, HEIGHT_NODE,
                        FIRST_FRAME_NODE, ENHANCER_TOGGLE_NODE]
             if args.model == "dev":
-                changed += [DEV_MODEL_NODE, BASE_GUIDER_NODE, BASE_SIGMAS_NODE]
+                changed += [MODEL_NODE, TEXT_ENCODER_NODE, BASE_GUIDER_NODE, REFINE_GUIDER_NODE,
+                            BASE_SIGMAS_NODE, REFINE_SIGMAS_NODE]
             shown["input"]["workflow"] = {k: shown["input"]["workflow"][k]["inputs"] for k in changed}
             print(json.dumps({"endpoint": f"{base_url}/run", "body": shown},
                              ensure_ascii=False, indent=2))
@@ -354,7 +364,8 @@ def main(argv=None) -> int:
             log("внимание: при CFG=1 негатив почти не влияет на результат")
 
         key = load_api_key()
-        log(f"LTX-2.5 {args.model}: {args.duration} с, {args.aspect_ratio}, кадр {args.strength}")
+        log(f"LTX-2.5 {args.model}: {args.duration} с, {args.aspect_ratio} {args.resolution}, "
+            f"кадр {args.strength}")
 
         headers = {"Content-Type": "application/json"}
         if key:
