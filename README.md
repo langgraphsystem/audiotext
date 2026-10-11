@@ -50,16 +50,18 @@ Runpod, скрипт `scripts/ltx_video.py`. Только от картинки,
 
 ```bash
 python scripts/ltx_video.py "slow push-in, smoke drifts" --image кадр.png              # 6 с, 16:9
-python scripts/ltx_video.py "..." --image кадр.png --duration 8 --strength 0.9          # держать кадр жёстче
+python scripts/ltx_video.py "..." --image кадр.png --model distilled --strength 0.8    # быстро, свободнее от кадра
 python scripts/ltx_video.py "..." --image кадр.png --dry-run                            # ничего не тратя
 make ltx PROMPT="slow push-in" ARGS="--image кадр.png"
 ```
 
-Воркер — `vavo/LTX2.5-serverless` (ComfyUI, distilled INT8, GPU от 48 ГБ), модели лежат на
-network volume. Ключ — `RUNPOD_API_KEY` или credential окружения для `api.runpod.ai`. Оплата —
-за секунды работы GPU; первый запуск дольше и дороже, он качает модели на volume. Быстрая
-версия модели работает с CFG=1, поэтому `--negative` почти ничего не даёт: запреты пишите в
-сам промпт. Звук LTX генерирует всегда; скрипт его вырезает, `--keep-audio` оставляет.
+Воркер — `vavo/LTX2.5-serverless` (ComfyUI, INT8, GPU от 48 ГБ), модели лежат на network volume.
+Ключ — `RUNPOD_API_KEY` или credential окружения для `api.runpod.ai`. Оплата — за секунды работы
+GPU. По умолчанию первый проход делает полная модель (`--model dev`: CFG 4, 30 шагов, ~4–5 мин на
+ролик), увеличение до 720p — быстрая distilled. `--model distilled` — всё на быстрой (~1 мин), но
+с CFG=1: `--negative` там почти ничего не даёт, запреты пишите в сам промпт. Кадр по умолчанию
+держится жёстко (`--strength 1.0`). Звук LTX генерирует всегда; скрипт его вырезает,
+`--keep-audio` оставляет.
 
 ## 📚 Сбор материала по аккаунтам
 

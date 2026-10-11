@@ -61,6 +61,17 @@ ENHANCER_NODE = "398:380"
 ENHANCER_TOGGLE_NODE = "398:383"
 FIRST_FRAME_NODE = "398:357"
 SEED_NODES = ("398:338", "398:339")
+# First (low-res) pass; the second pass refines the x2 upscale and stays distilled
+BASE_GUIDER_NODE = "398:388"
+BASE_SAMPLER_NODE = "398:352"
+BASE_SIGMAS_NODE = "398:397"
+BASE_LATENT_NODE = "398:377"
+DEV_MODEL_NODE = "398:900"
+
+DEV_TRANSFORMER = "ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors"
+MODELS = ("dev", "distilled")
+DEFAULT_STEPS = 30
+DEFAULT_CFG = 4.0
 
 INPUT_IMAGE_NAME = "source.png"
 
@@ -122,6 +133,9 @@ def build_payload(args: argparse.Namespace, image_data_url: str) -> dict:
     if args.negative:
         workflow[NEGATIVE_NODE]["inputs"]["text"] = args.negative
 
+    if args.model == "dev":
+        use_dev_base_pass(workflow, args.steps, args.cfg)
+
     for node in SEED_NODES:
         workflow[node]["inputs"]["noise_seed"] = rng.randrange(1, 10**15)
 
@@ -131,6 +145,31 @@ def build_payload(args: argparse.Namespace, image_data_url: str) -> dict:
             "images": [{"name": INPUT_IMAGE_NAME, "image": image_data_url}],
         }
     }
+
+
+def use_dev_base_pass(workflow: dict, steps: int, cfg: float) -> None:
+    """Run the first pass on the full model instead of the distilled one.
+
+    Distilled weights are trained for 8 fixed sigmas at CFG=1, which is why the
+    negative prompt does nothing and complex prompts are followed loosely. The dev
+    model needs real guidance and a full schedule; the upscale pass keeps the
+    distilled model, which is what it was tuned for.
+    """
+    workflow[DEV_MODEL_NODE] = {
+        "class_type": "UNETLoader",
+        "inputs": {"unet_name": DEV_TRANSFORMER, "weight_dtype": "default"},
+    }
+    guider = workflow[BASE_GUIDER_NODE]["inputs"]
+    guider["model"] = [DEV_MODEL_NODE, 0]
+    guider["video_cfg"] = cfg
+    workflow[BASE_SIGMAS_NODE] = {
+        "class_type": "LTXVScheduler",
+        "inputs": {
+            "steps": steps, "max_shift": 2.05, "base_shift": 0.95,
+            "stretch": True, "terminal": 0.1, "latent": [BASE_LATENT_NODE, 0],
+        },
+    }
+    workflow[BASE_SAMPLER_NODE]["inputs"]["sampler_name"] = "euler"
 
 
 def api_error(response: httpx.Response) -> GenerationError:
@@ -250,14 +289,21 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("prompt", help="что должно происходить в ролике")
     parser.add_argument("--image", required=True, help="картинка, с которой начинается ролик (файл)")
     parser.add_argument("--negative", default="",
-                        help="чего не должно быть в кадре; быстрая версия модели работает с CFG=1 "
-                             "и негатив почти не учитывает — важное пишите в сам промпт")
+                        help="чего не должно быть в кадре; учитывается только полной моделью "
+                             "(--model dev), быстрая работает с CFG=1 и негатив игнорирует")
+    parser.add_argument("--model", choices=MODELS, default="dev",
+                        help="dev — полная модель, точнее следует промпту, ~4-5 мин на ролик; "
+                             "distilled — быстрая, ~1 мин, но с CFG=1 (по умолчанию dev)")
+    parser.add_argument("--steps", type=int, default=DEFAULT_STEPS,
+                        help=f"шагов первого прохода для dev (по умолчанию {DEFAULT_STEPS})")
+    parser.add_argument("--cfg", type=float, default=DEFAULT_CFG,
+                        help=f"сила следования промпту для dev (по умолчанию {DEFAULT_CFG})")
     parser.add_argument("--duration", type=int, default=6, help="секунд, 1-20 (по умолчанию 6)")
     parser.add_argument("--aspect-ratio", choices=tuple(ASPECT_RATIOS), default="16:9",
                         help="формат кадра (по умолчанию 16:9, 1280x720)")
-    parser.add_argument("--strength", type=float, default=0.7,
-                        help="насколько жёстко держать исходный кадр, 0-1 (по умолчанию 0.7, "
-                             "как в воркфлоу; выше — меньше уходит от картинки)")
+    parser.add_argument("--strength", type=float, default=1.0,
+                        help="насколько жёстко держать исходный кадр, 0-1 (по умолчанию 1.0; "
+                             "при 0.7 модель дорисовывала лишних людей и меняла сцену)")
     parser.add_argument("--enhance", action="store_true",
                         help="дать модели переписать промпт (по умолчанию выключено)")
     parser.add_argument("--keep-audio", action="store_true",
@@ -278,6 +324,10 @@ def parse_args(argv=None) -> argparse.Namespace:
         parser.error(f"--duration должен быть от {MIN_DURATION} до {MAX_DURATION}")
     if not 0.0 <= args.strength <= 1.0:
         parser.error("--strength должен быть от 0 до 1")
+    if not 1 <= args.steps <= 100:
+        parser.error("--steps должен быть от 1 до 100")
+    if not 1.0 <= args.cfg <= 10.0:
+        parser.error("--cfg должен быть от 1 до 10")
     return args
 
 
@@ -291,18 +341,20 @@ def main(argv=None) -> int:
         if args.dry_run:
             shown = copy.deepcopy(payload)
             shown["input"]["images"][0]["image"] = "...(данные картинки)"
-            changed = (PROMPT_NODE, NEGATIVE_NODE, DURATION_NODE, WIDTH_NODE, HEIGHT_NODE,
-                       FIRST_FRAME_NODE, ENHANCER_TOGGLE_NODE)
+            changed = [PROMPT_NODE, NEGATIVE_NODE, DURATION_NODE, WIDTH_NODE, HEIGHT_NODE,
+                       FIRST_FRAME_NODE, ENHANCER_TOGGLE_NODE]
+            if args.model == "dev":
+                changed += [DEV_MODEL_NODE, BASE_GUIDER_NODE, BASE_SIGMAS_NODE]
             shown["input"]["workflow"] = {k: shown["input"]["workflow"][k]["inputs"] for k in changed}
             print(json.dumps({"endpoint": f"{base_url}/run", "body": shown},
                              ensure_ascii=False, indent=2))
             return 0
 
-        if args.negative:
+        if args.negative and args.model == "distilled":
             log("внимание: при CFG=1 негатив почти не влияет на результат")
 
         key = load_api_key()
-        log(f"LTX-2.5: {args.duration} с, {args.aspect_ratio}, кадр {args.strength}")
+        log(f"LTX-2.5 {args.model}: {args.duration} с, {args.aspect_ratio}, кадр {args.strength}")
 
         headers = {"Content-Type": "application/json"}
         if key:
